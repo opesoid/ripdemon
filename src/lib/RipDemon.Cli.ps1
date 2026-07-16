@@ -100,6 +100,11 @@ function ConvertTo-RipDemonArgList {
 }
 
 function Repair-RipDemonArgList {
+    <#
+    .SYNOPSIS
+      Rejoin URLs that CMD split on '=' or '&'.
+      PowerShell cannot accept bare '&' on the command line - use clipboard or paste prompt.
+    #>
     param($Tokens)
     $Tokens = ConvertTo-RipDemonArgList $Tokens
     $out = New-Object System.Collections.Generic.List[string]
@@ -111,8 +116,25 @@ function Repair-RipDemonArgList {
                 $next = [string]$Tokens[$i + 1]
                 if ($next -match '^-' -or $next -match '^https?://' -or $next -eq '--') { break }
                 if (($next -match '\.(txt|list|url)$') -and (Test-Path -LiteralPath $next)) { break }
-                if ($cur -match '[=?&]$|watch\?v$|list$|t$' -or ($next -match '^[A-Za-z0-9_-]+$' -and $cur -match 'https?://')) {
-                    $cur = "$cur=$next"
+
+                # CMD split on '&': ...watch?v=ID   list=PLxxx   start_radio=1
+                if ($next -match '^[A-Za-z0-9_]+=') {
+                    $cur = ($cur + '&' + $next)
+                    $i++
+                    continue
+                }
+                # CMD split on '=': ...watch?v   VIDEOID
+                if ($cur -match '[=?&]$|watch\?v$|list$|t$|index$|start_radio$' -or
+                    ($next -match '^[A-Za-z0-9_-]+$' -and $cur -match 'https?://')) {
+                    if ($cur -match 'watch\?v$' -or $cur -match '(list|t|index|start_radio)$') {
+                        $cur = "$cur=$next"
+                    }
+                    elseif ($cur -match '[=?&]$') {
+                        $cur = "$cur$next"
+                    }
+                    else {
+                        $cur = "$cur=$next"
+                    }
                     $i++
                     continue
                 }
@@ -125,6 +147,51 @@ function Repair-RipDemonArgList {
         $i++
     }
     Write-Output -NoEnumerate $out
+}
+
+function Test-RipDemonCanPrompt {
+    if ($env:RIPDEMON_NO_PROMPT -eq '1') { return $false }
+    if ($env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true') { return $false }
+    if (-not [Environment]::UserInteractive) { return $false }
+    try {
+        if ([Console]::IsInputRedirected) { return $false }
+    } catch {}
+    return $true
+}
+
+function Get-RipDemonUrlInteractive {
+    <#
+    .SYNOPSIS
+      Get a URL without putting and-signs on the PowerShell command line.
+      Tries clipboard first, then prompts to paste (Read-Host accepts them).
+    #>
+    param([string]$Hint = 'mp3')
+
+    $clip = Get-RipDemonClipboardText
+    if ($clip) {
+        $first = ($clip -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -First 1
+        if ($first -and (Test-RipDemonUrlLike $first)) {
+            $url = Normalize-RipDemonUrl $first
+            Write-Host "  Using clipboard: $url" -ForegroundColor DarkGray
+            return $url
+        }
+    }
+
+    if (-not (Test-RipDemonCanPrompt)) { return $null }
+
+    Write-Host ''
+    Write-Host '  No URL given. PowerShell blocks unquoted and-signs in URLs.' -ForegroundColor Yellow
+    Write-Host '  Paste a link below and press Enter.' -ForegroundColor DarkGray
+    Write-Host '  Or use a short link with no query string: yt mp3 https://youtu.be/VIDEO_ID' -ForegroundColor DarkGray
+    Write-Host ''
+    $pasted = Read-Host "  URL for $Hint"
+    if (-not $pasted) { return $null }
+    $pasted = $pasted.Trim().Trim('"').Trim("'")
+    if (-not (Test-RipDemonUrlLike $pasted)) {
+        Write-Host '  That does not look like a URL.' -ForegroundColor Red
+        return $null
+    }
+    return (Normalize-RipDemonUrl $pasted)
 }
 
 function Get-RipDemonTargetsFromTextFile {
@@ -182,7 +249,7 @@ function Show-RipDemonUsage {
     Write-Host '    yt uninstall                      Remove RIP Demon'
     Write-Host '    yt help                           Show this help'
     Write-Host ''
-    Write-Host '  Omit the URL to use the clipboard when it looks like a link.'
+    Write-Host '  Omit the URL to use the clipboard, or paste when prompted.'
     Write-Host '  Pass a .txt file (one URL per line) or multiple URLs to batch download.'
     Write-Host '  Works with YouTube and most sites supported by yt-dlp.'
     Write-Host ''
@@ -201,16 +268,15 @@ function Show-RipDemonUsage {
     Write-Host '  Config:  %LOCALAPPDATA%\RIP-Demon\config.ini'
     Write-Host '  Env:     RIPDEMON_MP3_DIR, RIPDEMON_MP4_DIR'
     Write-Host ''
-    Write-Host '  Examples:'
+    Write-Host '  Examples (no quotes needed):'
     Write-Host '    yt mp3'
-    Write-Host '    yt mp4 --1080 --open "https://youtu.be/VIDEO_ID"'
-    Write-Host '    yt mp3 "https://www.youtube.com/watch?v=VIDEO_ID&list=..."'
+    Write-Host '    yt mp3 https://youtu.be/VIDEO_ID'
+    Write-Host '    yt mp4 --1080 --open https://youtu.be/VIDEO_ID'
     Write-Host '    yt mp3 urls.txt'
-    Write-Host '    yt mp4 --subs en --sponsorblock <url>'
-    Write-Host '    yt info <url>'
-    Write-Host '    yt mp3 -- --download-archive archive.txt <url>'
+    Write-Host '    yt info https://youtu.be/VIDEO_ID'
     Write-Host ''
-    Write-Host '  PowerShell tip: always quote URLs that contain &  (or copy the link and run: yt mp3)'
+    Write-Host '  Long youtube.com links with query params: copy the link, then run yt mp3'
+    Write-Host '  (PowerShell cannot accept those unquoted on the command line.)'
     Write-Host ''
 }
 
@@ -252,8 +318,10 @@ function Invoke-RipDemonDownload {
 
     if (-not $Targets -or $Targets.Count -eq 0) {
         Write-Host 'Error: missing URL.' -ForegroundColor Red
-        Write-Host 'Paste a link and run again, or: yt mp3 <url>'
-        Write-Host 'Tip: quote URLs that contain & :  yt mp3 "https://...&list=..."'
+        Write-Host '  No-quotes options:'
+        Write-Host '    1) Copy the link, then run:  yt mp3'
+        Write-Host '    2) Run yt mp3 and paste when prompted'
+        Write-Host '    3) Short URL:  yt mp3 https://youtu.be/VIDEO_ID'
         Show-RipDemonUsage
         return 1
     }
@@ -325,7 +393,7 @@ function Invoke-RipDemonDownload {
             Write-Host '  Download failed.' -ForegroundColor Red
             Write-Host '  Try: yt update'
             Write-Host '       yt mp3 --cookies-from-browser chrome <url>'
-            Write-Host '       Quote URLs that contain &'
+            Write-Host '       Copy the link and run: yt mp3'
             continue
         }
 
@@ -348,6 +416,8 @@ function Invoke-RipDemonInfo {
     )
     if (-not $Targets -or $Targets.Count -eq 0) {
         Write-Host 'Error: missing URL for yt info.' -ForegroundColor Red
+        Write-Host '  Copy the link, then: yt info'
+        Write-Host '  Or short URL: yt info https://youtu.be/VIDEO_ID'
         return 1
     }
 
@@ -500,13 +570,9 @@ function Parse-RipDemonCli {
 
     $targets = Resolve-RipDemonTargets -Tokens $positional
     if ($targets.Count -eq 0 -and $cmd -in @('mp3', 'mp4', 'info')) {
-        $clip = Get-RipDemonClipboardText
-        if ($clip) {
-            $first = ($clip -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -First 1
-            if ($first -and (Test-RipDemonUrlLike $first)) {
-                $targets = @((Normalize-RipDemonUrl $first))
-                Write-Host "  Using clipboard: $($targets[0])" -ForegroundColor DarkGray
-            }
+        $fromUser = Get-RipDemonUrlInteractive -Hint $cmd
+        if ($fromUser) {
+            $targets = @($fromUser)
         }
     }
 

@@ -161,14 +161,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\Install.ps1 -Ins
 
 ```bat
 yt mp3
-yt mp4 --open "https://youtu.be/VIDEO_ID"
-yt info "https://www.youtube.com/watch?v=VIDEO_ID"
+yt mp3 https://youtu.be/VIDEO_ID
+yt mp4 --open https://youtu.be/VIDEO_ID
+yt info https://youtu.be/VIDEO_ID
 yt gui
 yt config
 ```
 
 1. Copy a video link.
-2. Run `yt mp3` or `yt mp4` (no URL needed if the clipboard holds the link).
+2. Run `yt mp3` or `yt mp4` (uses the clipboard, or prompts you to paste).
 3. Find files under your Music / Videos **RIP Demon** folders (or paths from `yt config`).
 
 ---
@@ -187,7 +188,9 @@ yt config
 | `yt uninstall` | Remove RIP Demon |
 | `yt help` | Show help |
 
-If you omit the URL for `mp3` / `mp4` / `info`, RIP Demon uses the **clipboard** when it looks like a link.
+If you omit the URL for `mp3` / `mp4` / `info`, RIP Demon uses the **clipboard** when it looks like a link, otherwise it **prompts you to paste** (paste accepts full YouTube URLs with query params).
+
+For typed URLs without quotes, prefer short links (`https://youtu.be/VIDEO_ID`). PowerShell rejects bare `&` on the command line before `yt` runs.
 
 Pass a **`.txt` / `.list`** file (one URL per line, `#` comments allowed) or multiple URLs to download in sequence. Internet shortcut **`.url`** files are also accepted.
 
@@ -225,26 +228,26 @@ CLI flags and env vars override `config.ini`.
 ## Examples
 
 ```bat
-REM Clipboard
+REM Clipboard or paste prompt (best for long youtube.com links)
 yt mp3
 yt mp4
 
-REM Single URL (quote when the URL contains &)
-yt mp3 "https://www.youtube.com/watch?v=VIDEO_ID"
-yt mp4 --1080 --open "https://youtu.be/VIDEO_ID"
+REM Short URL - no quotes needed
+yt mp3 https://youtu.be/VIDEO_ID
+yt mp4 --1080 --open https://youtu.be/VIDEO_ID
 
-REM Playlist link but only this video
-yt mp3 --no-playlist "https://www.youtube.com/watch?v=VIDEO_ID&list=PLxxxx"
+REM Playlist link but only this video (copy link, then:)
+yt mp3 --no-playlist
 
 REM Restricted / age-gated
-yt mp4 --cookies-from-browser chrome https://www.youtube.com/watch?v=VIDEO_ID
+yt mp4 --cookies-from-browser chrome https://youtu.be/VIDEO_ID
 
 REM Batch
 yt mp3 urls.txt
 yt mp3 url1 url2 url3
 
 REM Subtitles + SponsorBlock
-yt mp4 --subs en --sponsorblock https://www.youtube.com/watch?v=VIDEO_ID
+yt mp4 --subs en --sponsorblock https://youtu.be/VIDEO_ID
 
 REM Custom folder
 yt mp3 -o D:\Music\Imports https://youtu.be/VIDEO_ID
@@ -262,15 +265,18 @@ yt version
 yt update
 ```
 
-**Always quote URLs that contain `&`** — especially in **PowerShell**, which rejects bare `&` before `yt` even runs:
+**Prefer no-quotes workflows** (PowerShell cannot accept bare `&` before `yt` runs):
 
 ```powershell
-yt mp3 "https://www.youtube.com/watch?v=VIDEO_ID&list=PLxxxx"
-# or copy the link, then:
+# Best: copy the link, then
 yt mp3
-```
 
-Unquoted `watch?v=ID` often still works in **CMD** (RIP Demon rejoins `=`-split arguments), but quoting is the safest habit everywhere.
+# Or short URL (no query string)
+yt mp3 https://youtu.be/VIDEO_ID
+
+# Or quote only if you insist on pasting a long youtube.com URL on the command line
+yt mp3 "https://www.youtube.com/watch?v=VIDEO_ID&list=PLxxxx"
+```
 
 ---
 
@@ -510,8 +516,8 @@ rip-demon/
 |---------|-----|
 | `yt` is not recognized | Open a **new** terminal after install, or use the installer window (PATH is primed there). Confirm `%LOCALAPPDATA%\RIP-Demon\bin` is on your User PATH. |
 | `yt-dlp not found` | Run `yt update` |
-| Download / site errors | Run `yt update`; try `--cookies-from-browser chrome`; quote URLs that contain `&` |
-| PowerShell: `The ampersand (&) character is not allowed` | Quote the URL: `yt mp3 "https://...&list=..."`. Or copy the link and run `yt mp3` (clipboard). In PowerShell you can also use `yt mp3 --% https://...&list=...` |
+| Download / site errors | Run `yt update`; try `--cookies-from-browser chrome`; copy the link and run `yt mp3` |
+| PowerShell: `The ampersand (&) character is not allowed` | Do not type long `youtube.com` URLs with `&` on the command line. Copy the link and run `yt mp3` (clipboard or paste prompt), or use `yt mp3 https://youtu.be/VIDEO_ID` |
 | Age-gated or private video | `--cookies-from-browser` with a logged-in browser profile |
 | SHA256 / size mismatch | Re-run `yt update`; check proxy, VPN, or antivirus interference |
 | Install fails on `.ps1` double-click | Use `Install.cmd` instead |

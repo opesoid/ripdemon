@@ -10,6 +10,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
+# Avoid hang on Read-Host when yt mp3 has no URL/clipboard
+$env:RIPDEMON_NO_PROMPT = '1'
 
 $failed = 0
 function Assert-True {
@@ -135,6 +137,8 @@ Assert-True ($cli -match 'cookies-from-browser') 'CLI supports cookies-from-brow
 Assert-True ($cli -match 'output-dir') 'CLI supports --output-dir'
 Assert-True ($cli -match '--open') 'CLI supports --open'
 Assert-True ($cli -match 'Get-RipDemonClipboardText') 'CLI supports clipboard'
+Assert-True ($cli -match 'Get-RipDemonUrlInteractive') 'CLI supports paste prompt for URLs'
+Assert-True ($cli -match "\+ '&' \+") 'CLI rejoins CMD-split URL query fragments'
 Assert-True ($cli -match 'sponsorblock') 'CLI supports sponsorblock'
 Assert-True ($cli -match "'info'") 'CLI supports info command'
 

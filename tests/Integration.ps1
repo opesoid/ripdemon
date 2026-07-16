@@ -12,6 +12,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
+# Avoid hang on Read-Host when yt mp3/mp4 has no URL/clipboard
+$env:RIPDEMON_NO_PROMPT = '1'
 
 $failed = 0
 
