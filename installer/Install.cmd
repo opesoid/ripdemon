@@ -4,7 +4,7 @@ cd /d "%~dp0\.."
 echo.
 echo  Starting RIP Demon installer...
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install.ps1" -NoPause %*
 set "ERR=%ERRORLEVEL%"
 echo.
 if not "%ERR%"=="0" (

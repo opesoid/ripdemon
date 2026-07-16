@@ -49,7 +49,7 @@ Windows tool for downloading audio and video with short `yt` commands. Built on 
 - **Clipboard mode** — omit the URL; RIP Demon uses a copied link when it looks like one
 - **Batch** — multiple URLs, or a `.txt` / `.list` file (one URL per line), or `.url` shortcuts
 - **MP3** — best-quality extract + convert, embedded thumbnail and metadata
-- **MP4** — quality presets **720**, **1080** (default), **best**, with sensible fallbacks
+- **MP4** — default **1080p 60fps** (with fallbacks); presets **720**, **1080**, **best** in CLI/GUI
 - **Extras** — subtitles, SponsorBlock removal, thumbnail-only, yt-dlp passthrough (`--`)
 - **Config file** + first-run installer wizard
 - **Minimal GUI** (`yt gui` / Start Menu)
@@ -112,7 +112,7 @@ Use the **`.cmd`** launchers. Double-clicking `.ps1` files often fails because o
 
 1. Download and unzip a release (or [build one](#build--test)).
 2. Double-click **`Install.cmd`** in the zip root (or `installer\Install.cmd` in this repo).
-3. Answer the short first-run prompts (or press Enter for defaults).
+3. Answer the short first-run prompts (folders, cookies, etc.). Quality defaults to best MP3 and 1080p 60fps MP4 automatically.
 4. Wait for tool downloads (FFmpeg and deno can take a few minutes).
 5. In that same installer window (PATH is primed), or in a **new** terminal:
 
@@ -324,7 +324,8 @@ The download window includes:
 
 - Paste / clipboard URL
 - **MP3** or **MP4** (large format buttons)
-- MP4 quality: 720 / 1080 / best
+- Download progress bar with speed and ETA
+- MP4 quality: 720 / 1080 (1080p60 default) / best
 - Cookies browser (chrome, edge, firefox, …)
 - No-playlist, open folder when done
 - Subtitles + language (MP4)

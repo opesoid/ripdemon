@@ -6,7 +6,8 @@
 param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'RIP-Demon'),
     [switch]$SkipTools,
-    [switch]$SkipWizard
+    [switch]$SkipWizard,
+    [switch]$NoPause
 )
 
 $ErrorActionPreference = 'Stop'
@@ -127,3 +128,7 @@ Write-Host "  MP4 folder: $($cfg.Mp4Dir)"
 Write-Host "  Config:     $(Join-Path $InstallRoot 'config.ini')"
 Write-Host "  Install:    $InstallRoot"
 Write-Host ''
+
+if (-not $NoPause) {
+    Wait-RipDemonInstallAck
+}

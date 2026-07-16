@@ -40,6 +40,15 @@ if (-not (Test-Path -LiteralPath $YtCmd)) {
 
 $cfg = Get-RipDemonConfig -InstallRoot $InstallRoot -DefaultConfigPath (Join-Path $LibDir 'config.default.ini')
 
+$YtDlp = Join-Path $InstallRoot 'tools\yt-dlp.exe'
+$ToolsDir = Join-Path $InstallRoot 'tools'
+
+$Mp4Formats = @{
+    '720'  = 'bv*[height=720][fps=60]+ba/bv*[height=720][fps>=50]+ba/bv*[height=720]+ba/bv*[height<=720]+ba/b'
+    '1080' = 'bv*[height=1080][fps=60]+ba/bv*[height=1080][fps>=50]+ba/bv*[height=1080]+ba/bv*[height<=1080]+ba/b'
+    'best' = 'bv*+ba/b'
+}
+
 $appVer = '1.0.1'
 $verFile = Join-Path $InstallRoot 'version.txt'
 if (Test-Path -LiteralPath $verFile) { $appVer = (Get-Content -LiteralPath $verFile -Raw).Trim() }
@@ -119,8 +128,8 @@ function Style-Button($btn, [switch]$Primary, [switch]$Ghost) {
 # --- Form ---
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "RIP Demon $appVer"
-$form.Size = New-Object System.Drawing.Size(640, 560)
-$form.MinimumSize = New-Object System.Drawing.Size(640, 560)
+$form.Size = New-Object System.Drawing.Size(640, 600)
+$form.MinimumSize = New-Object System.Drawing.Size(640, 600)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -153,17 +162,18 @@ foreach ($logoCand in @(
 # Header
 $hdr = New-Object System.Windows.Forms.Panel
 $hdr.Location = New-Object System.Drawing.Point(0, 0)
-$hdr.Size = New-Object System.Drawing.Size(640, 64)
+$hdr.Size = New-Object System.Drawing.Size(640, 78)
 $hdr.BackColor = $cPanel
 $form.Controls.Add($hdr)
 
-$lblTitle = New-Label 'RIP Demon' 20 12 (New-Object System.Drawing.Font('Segoe UI Semibold', 16)) $cText
+$lblTitle = New-Label 'RIP Demon' 20 10 (New-Object System.Drawing.Font('Segoe UI Semibold', 16)) $cText
 $hdr.Controls.Add($lblTitle)
 
 $lblBrand = New-Object System.Windows.Forms.LinkLabel
 $lblBrand.Text = "by Opes  |  v$appVer  |  opes.dev"
-$lblBrand.Location = New-Object System.Drawing.Point(20, 40)
-$lblBrand.AutoSize = $true
+$lblBrand.Location = New-Object System.Drawing.Point(20, 42)
+$lblBrand.Size = New-Object System.Drawing.Size(600, 22)
+$lblBrand.AutoSize = $false
 $lblBrand.LinkColor = $cMuted
 $lblBrand.ActiveLinkColor = $cAccentHi
 $lblBrand.VisitedLinkColor = $cMuted
@@ -172,10 +182,10 @@ $lblBrand.Add_LinkClicked({ Start-Process 'https://opes.dev' })
 $hdr.Controls.Add($lblBrand)
 
 # URL
-$form.Controls.Add((New-Label 'Video URL' 20 80 $null $cMuted))
+$form.Controls.Add((New-Label 'Video URL' 20 92 $null $cMuted))
 
 $txtUrl = New-Object System.Windows.Forms.TextBox
-$txtUrl.Location = New-Object System.Drawing.Point(20, 100)
+$txtUrl.Location = New-Object System.Drawing.Point(20, 112)
 $txtUrl.Size = New-Object System.Drawing.Size(480, 28)
 $txtUrl.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $txtUrl.Text = Get-ClipboardUrl
@@ -184,7 +194,7 @@ $form.Controls.Add($txtUrl)
 
 $btnPaste = New-Object System.Windows.Forms.Button
 $btnPaste.Text = 'Paste'
-$btnPaste.Location = New-Object System.Drawing.Point(510, 98)
+$btnPaste.Location = New-Object System.Drawing.Point(510, 110)
 $btnPaste.Size = New-Object System.Drawing.Size(100, 32)
 Style-Button $btnPaste -Ghost
 $btnPaste.Add_Click({
@@ -196,11 +206,11 @@ $btnPaste.Add_Click({
 $form.Controls.Add($btnPaste)
 
 # Format
-$form.Controls.Add((New-Label 'Format' 20 144 $null $cMuted))
+$form.Controls.Add((New-Label 'Format' 20 156 $null $cMuted))
 
 $btnMp3 = New-Object System.Windows.Forms.Button
 $btnMp3.Text = 'MP3  |  Audio'
-$btnMp3.Location = New-Object System.Drawing.Point(20, 164)
+$btnMp3.Location = New-Object System.Drawing.Point(20, 176)
 $btnMp3.Size = New-Object System.Drawing.Size(290, 40)
 $btnMp3.Tag = 'mp3'
 Style-Button $btnMp3 -Primary
@@ -208,7 +218,7 @@ $form.Controls.Add($btnMp3)
 
 $btnMp4 = New-Object System.Windows.Forms.Button
 $btnMp4.Text = 'MP4  |  Video'
-$btnMp4.Location = New-Object System.Drawing.Point(320, 164)
+$btnMp4.Location = New-Object System.Drawing.Point(320, 176)
 $btnMp4.Size = New-Object System.Drawing.Size(290, 40)
 $btnMp4.Tag = 'mp4'
 Style-Button $btnMp4 -Ghost
@@ -218,7 +228,7 @@ $script:SelectedMode = 'mp3'
 
 # Options panel
 $pnlOpts = New-Object System.Windows.Forms.Panel
-$pnlOpts.Location = New-Object System.Drawing.Point(20, 220)
+$pnlOpts.Location = New-Object System.Drawing.Point(20, 232)
 $pnlOpts.Size = New-Object System.Drawing.Size(590, 170)
 $pnlOpts.BackColor = $cPanel
 $form.Controls.Add($pnlOpts)
@@ -226,7 +236,7 @@ $form.Controls.Add($pnlOpts)
 $pnlOpts.Controls.Add((New-Label 'Options' 16 10 $null $cMuted))
 
 # Left column
-$lblQ = New-Label 'MP4 quality' 16 36 $null $cMuted
+$lblQ = New-Label 'MP4 quality (1080p60)' 16 36 $null $cMuted
 $pnlOpts.Controls.Add($lblQ)
 
 $cmbQuality = New-Object System.Windows.Forms.ComboBox
@@ -354,7 +364,7 @@ $chkThumb.Add_CheckedChanged({
 # Actions
 $btnGo = New-Object System.Windows.Forms.Button
 $btnGo.Text = 'Download'
-$btnGo.Location = New-Object System.Drawing.Point(20, 408)
+$btnGo.Location = New-Object System.Drawing.Point(20, 418)
 $btnGo.Size = New-Object System.Drawing.Size(200, 40)
 $btnGo.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 11)
 Style-Button $btnGo -Primary
@@ -363,7 +373,7 @@ $form.AcceptButton = $btnGo
 
 $btnFolderMp3 = New-Object System.Windows.Forms.Button
 $btnFolderMp3.Text = 'MP3 folder'
-$btnFolderMp3.Location = New-Object System.Drawing.Point(232, 408)
+$btnFolderMp3.Location = New-Object System.Drawing.Point(232, 418)
 $btnFolderMp3.Size = New-Object System.Drawing.Size(110, 40)
 Style-Button $btnFolderMp3 -Ghost
 $btnFolderMp3.Add_Click({
@@ -374,7 +384,7 @@ $form.Controls.Add($btnFolderMp3)
 
 $btnFolderMp4 = New-Object System.Windows.Forms.Button
 $btnFolderMp4.Text = 'MP4 folder'
-$btnFolderMp4.Location = New-Object System.Drawing.Point(350, 408)
+$btnFolderMp4.Location = New-Object System.Drawing.Point(350, 418)
 $btnFolderMp4.Size = New-Object System.Drawing.Size(110, 40)
 Style-Button $btnFolderMp4 -Ghost
 $btnFolderMp4.Add_Click({
@@ -385,18 +395,176 @@ $form.Controls.Add($btnFolderMp4)
 
 $btnClose = New-Object System.Windows.Forms.Button
 $btnClose.Text = 'Close'
-$btnClose.Location = New-Object System.Drawing.Point(500, 408)
+$btnClose.Location = New-Object System.Drawing.Point(500, 418)
 $btnClose.Size = New-Object System.Drawing.Size(110, 40)
 Style-Button $btnClose -Ghost
 $btnClose.Add_Click({ $form.Close() })
 $form.Controls.Add($btnClose)
 
+$lblProgress = New-Object System.Windows.Forms.Label
+$lblProgress.Location = New-Object System.Drawing.Point(20, 468)
+$lblProgress.Size = New-Object System.Drawing.Size(590, 18)
+$lblProgress.ForeColor = $cMuted
+$lblProgress.BackColor = [System.Drawing.Color]::Transparent
+$lblProgress.Text = 'Ready'
+$form.Controls.Add($lblProgress)
+
+$pbDownload = New-Object System.Windows.Forms.ProgressBar
+$pbDownload.Location = New-Object System.Drawing.Point(20, 488)
+$pbDownload.Size = New-Object System.Drawing.Size(590, 22)
+$pbDownload.Minimum = 0
+$pbDownload.Maximum = 100
+$pbDownload.Value = 0
+$pbDownload.Style = 'Continuous'
+$form.Controls.Add($pbDownload)
+
 $lblStatus = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 460)
-$lblStatus.Size = New-Object System.Drawing.Size(590, 40)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 516)
+$lblStatus.Size = New-Object System.Drawing.Size(590, 36)
 $lblStatus.ForeColor = $cMuted
 $lblStatus.BackColor = [System.Drawing.Color]::Transparent
 $form.Controls.Add($lblStatus)
+
+function Reset-DownloadProgressUi {
+    $script:pbDownload.Style = 'Continuous'
+    $script:pbDownload.Value = 0
+    $script:lblProgress.Text = 'Ready'
+}
+
+function Update-DownloadProgressLine {
+    param([string]$Line)
+    if (-not $Line) { return }
+    $t = $Line -replace '\x1b\[[0-9;]*m', ''
+    $t = $t.Trim()
+    if (-not $t) { return }
+
+    if ($t -match '^\[download\]\s+([\d.]+)%\s+of\s+(\S+)\s+at\s+(\S+)(?:\s+ETA\s+(\S+))?') {
+        $pct = [int][double]$Matches[1]
+        $script:pbDownload.Style = 'Continuous'
+        $script:pbDownload.Value = [Math]::Min(100, [Math]::Max(0, $pct))
+        $eta = if ($Matches[4]) { $Matches[4] } else { '...' }
+        $script:lblProgress.Text = "$($Matches[1])% of $($Matches[2]) at $($Matches[3]) - ETA $eta"
+        return
+    }
+    if ($t -match '^\[download\]\s+([\d.]+)%') {
+        $pct = [int][double]$Matches[1]
+        $script:pbDownload.Style = 'Continuous'
+        $script:pbDownload.Value = [Math]::Min(100, [Math]::Max(0, $pct))
+        $script:lblProgress.Text = "$($Matches[1])% downloaded"
+        return
+    }
+    if ($t -match '^\[(download|ExtractAudio|Merger|ffmpeg|Metadata|SponsorBlock)\]') {
+        $short = $t
+        if ($short.Length -gt 72) { $short = $short.Substring(0, 72) + '...' }
+        $script:lblProgress.Text = $short
+    }
+}
+
+function Invoke-RipDemonGuiDownload {
+    param(
+        [Parameter(Mandatory)][string]$Mode,
+        [Parameter(Mandatory)][string]$Url
+    )
+
+    if (-not (Test-Path -LiteralPath $YtDlp)) {
+        throw 'yt-dlp not found. Run: yt update'
+    }
+
+    $outDir = if ($Mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
+    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+    $template = Join-Path $outDir '%(title)s [%(id)s].%(ext)s'
+
+    $yargs = New-Object System.Collections.Generic.List[string]
+    $yargs.Add('--ffmpeg-location'); $yargs.Add($ToolsDir)
+    $yargs.Add('--no-mtime')
+    $yargs.Add('--newline')
+    $yargs.Add('--progress')
+    $yargs.Add('-o'); $yargs.Add($template)
+
+    if ($chkNoPl.Checked) { $yargs.Add('--no-playlist') }
+    $cookies = $cmbCookies.Text.Trim()
+    if ($cookies -and $cookies -ne '(none)') {
+        $yargs.Add('--cookies-from-browser'); $yargs.Add($cookies)
+    }
+
+    if ($chkThumb.Checked) {
+        $yargs.Add('--skip-download')
+        $yargs.Add('--write-thumbnail')
+        $yargs.Add('--convert-thumbnails'); $yargs.Add('jpg')
+    }
+    elseif ($Mode -eq 'mp3') {
+        $yargs.Add('-x')
+        $yargs.Add('--audio-format'); $yargs.Add('mp3')
+        $yargs.Add('--audio-quality'); $yargs.Add('0')
+        $yargs.Add('--embed-thumbnail')
+        $yargs.Add('--embed-metadata')
+    }
+    else {
+        $q = [string]$cmbQuality.SelectedItem
+        $fmt = $Mp4Formats[$q]
+        if (-not $fmt) { $fmt = $Mp4Formats['1080'] }
+        $yargs.Add('-f'); $yargs.Add($fmt)
+        $yargs.Add('--merge-output-format'); $yargs.Add('mp4')
+        $yargs.Add('--embed-metadata')
+        if ($chkSponsor.Checked) {
+            $yargs.Add('--sponsorblock-remove'); $yargs.Add('default')
+        }
+        if ($chkSubs.Checked) {
+            $yargs.Add('--write-subs')
+            $yargs.Add('--embed-subs')
+            $lang = $cmbSubsLang.Text.Trim()
+            if ($lang) {
+                $yargs.Add('--sub-langs'); $yargs.Add($lang)
+            } else {
+                $yargs.Add('--sub-langs'); $yargs.Add('en.*,en')
+            }
+        }
+    }
+
+    $yargs.Add('--')
+    $yargs.Add($Url)
+
+    $argLine = ($yargs | ForEach-Object {
+        if ($_ -match '[\s"]') { '"{0}"' -f ($_ -replace '"', '""') } else { $_ }
+    }) -join ' '
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $YtDlp
+    $psi.Arguments = $argLine
+    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+
+    $stderr = $proc.StandardError
+    $stdout = $proc.StandardOutput
+    while (-not $proc.HasExited) {
+        while (($line = $stderr.ReadLine()) -ne $null) {
+            Update-DownloadProgressLine $line
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+        while (($line = $stdout.ReadLine()) -ne $null) {
+            Update-DownloadProgressLine $line
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+        Start-Sleep -Milliseconds 80
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    while (($line = $stderr.ReadLine()) -ne $null) {
+        Update-DownloadProgressLine $line
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    while (($line = $stdout.ReadLine()) -ne $null) {
+        Update-DownloadProgressLine $line
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    $proc.WaitForExit()
+    return $proc.ExitCode
+}
 
 Update-ModeUi
 Set-StatusHint
@@ -418,61 +586,43 @@ $btnGo.Add_Click({
     }
 
     $mode = $script:SelectedMode
-    $argList = New-Object System.Collections.Generic.List[string]
-    $argList.Add($mode)
-
-    if ($chkThumb.Checked) {
-        $argList.Add('--thumbnail-only')
-    }
-    else {
-        if ($mode -eq 'mp4') {
-            $argList.Add('--quality')
-            $argList.Add([string]$cmbQuality.SelectedItem)
-            if ($chkSubs.Checked) {
-                $argList.Add('--subs')
-                $lang = $cmbSubsLang.Text.Trim()
-                if ($lang) { $argList.Add($lang) }
-            }
-            if ($chkSponsor.Checked) { $argList.Add('--sponsorblock') }
-        }
-    }
-
-    if ($chkOpen.Checked) { $argList.Add('--open') }
-    if ($chkNoPl.Checked) { $argList.Add('--no-playlist') }
-
-    $cookies = $cmbCookies.Text.Trim()
-    if ($cookies -and $cookies -ne '(none)') {
-        $argList.Add('--cookies-from-browser')
-        $argList.Add($cookies)
-    }
-
-    $argList.Add($url)
 
     $lblStatus.ForeColor = $cMuted
-    $lblStatus.Text = "Downloading $mode..."
+    $lblStatus.Text = "Starting $mode download..."
+    $lblProgress.Text = 'Connecting...'
+    $pbDownload.Value = 0
     $btnGo.Enabled = $false
     $btnMp3.Enabled = $false
     $btnMp4.Enabled = $false
+    $btnPaste.Enabled = $false
     $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
     $form.Refresh()
 
     try {
-        $p = Start-Process -FilePath $YtCmd -ArgumentList $argList.ToArray() -Wait -PassThru -NoNewWindow
-        if ($p.ExitCode -eq 0) {
+        $exitCode = Invoke-RipDemonGuiDownload -Mode $mode -Url $url
+        if ($exitCode -eq 0) {
             $dir = if ($mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
+            $pbDownload.Value = 100
+            $lblProgress.Text = 'Complete'
             $lblStatus.ForeColor = $cOk
             $lblStatus.Text = "Done - saved to $dir"
+            if ($chkOpen.Checked) {
+                try { Start-Process -FilePath 'explorer.exe' -ArgumentList $dir | Out-Null } catch {}
+            }
         } else {
+            $lblProgress.Text = 'Failed'
             $lblStatus.ForeColor = $cAccentHi
-            $lblStatus.Text = "Failed (exit $($p.ExitCode)). Try yt update, or enable cookies for age-gated videos."
+            $lblStatus.Text = "Failed (exit $exitCode). Try yt update, or enable cookies for age-gated videos."
         }
     } catch {
+        $lblProgress.Text = 'Error'
         $lblStatus.ForeColor = $cAccentHi
         $lblStatus.Text = "Error: $($_.Exception.Message)"
     } finally {
         $btnGo.Enabled = $true
         $btnMp3.Enabled = $true
         $btnMp4.Enabled = $true
+        $btnPaste.Enabled = $true
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
         Update-ModeUi
     }

@@ -142,6 +142,10 @@ try {
     if (($code -eq 0 -or $null -eq $code) -and (Test-Path -LiteralPath $InstallRoot)) {
         Set-InstalledRipDemonCommit -InstallRoot $InstallRoot -Commit $source.Commit
     }
+    if ($code -ne 0 -and $null -ne $code) {
+        Wait-RipDemonInstallAck
+        exit $code
+    }
     exit $code
 }
 finally {

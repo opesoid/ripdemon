@@ -10,6 +10,21 @@ function Get-RipDemonRoot {
     return (Join-Path $env:LOCALAPPDATA 'RIP-Demon')
 }
 
+function Wait-RipDemonInstallAck {
+    <#
+    .SYNOPSIS
+      Keep the installer window open until the user acknowledges (web-install / iex).
+    #>
+    if ($env:RIPDEMON_NO_PAUSE -eq '1') { return }
+    if ($env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true') { return }
+    try {
+        if ([Console]::IsInputRedirected) { return }
+    } catch {}
+    Write-Host ''
+    Write-Host '  Press Enter to close...' -ForegroundColor DarkGray
+    Read-Host | Out-Null
+}
+
 function Get-RipDemonOutputDirs {
     <#
     .SYNOPSIS
@@ -1172,6 +1187,7 @@ function Invoke-RipDemonFirstRunWizard {
 
     Write-Host ''
     Write-Host '  -------- First-run setup --------' -ForegroundColor Cyan
+    Write-Host '  Defaults: best-quality MP3, 1080p 60fps MP4 (applied automatically).' -ForegroundColor DarkGray
     Write-Host '  Press Enter to accept the default in [brackets].' -ForegroundColor DarkGray
     Write-Host ''
 
@@ -1180,10 +1196,7 @@ function Invoke-RipDemonFirstRunWizard {
     $mp4 = Read-Host "  MP4 folder [$($defaults.Mp4)]"
     if (-not $mp4) { $mp4 = $defaults.Mp4 }
 
-    $quality = Read-Host '  Default MP4 quality: 720 / 1080 / best [1080]'
-    if (-not $quality) { $quality = '1080' }
-    $quality = $quality.Trim().ToLowerInvariant()
-    if ($quality -notin @('720', '1080', 'best')) { $quality = '1080' }
+    $quality = '1080'
 
     $cookies = Read-Host '  Default cookies browser (chrome/edge/firefox or blank) []'
     if (-not $cookies) { $cookies = '' }
