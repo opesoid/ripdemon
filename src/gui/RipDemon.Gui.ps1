@@ -40,7 +40,7 @@ if (-not (Test-Path -LiteralPath $YtCmd)) {
 
 $cfg = Get-RipDemonConfig -InstallRoot $InstallRoot -DefaultConfigPath (Join-Path $LibDir 'config.default.ini')
 
-$appVer = '1.0.0'
+$appVer = '1.0.1'
 $verFile = Join-Path $InstallRoot 'version.txt'
 if (Test-Path -LiteralPath $verFile) { $appVer = (Get-Content -LiteralPath $verFile -Raw).Trim() }
 

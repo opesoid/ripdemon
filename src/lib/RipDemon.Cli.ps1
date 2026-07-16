@@ -164,7 +164,7 @@ function Resolve-RipDemonTargets {
 }
 
 function Show-RipDemonUsage {
-    $ver = '1.0.0'
+    $ver = '1.0.1'
     $vf = Join-Path $InstallRoot 'version.txt'
     if (Test-Path -LiteralPath $vf) { $ver = (Get-Content -LiteralPath $vf -Raw).Trim() }
     Write-Host ''

@@ -4,14 +4,14 @@
 
 # RIP Demon
 
-**Version 1.0.0** · by [Opes](https://opes.dev)
+**Version 1.0.1** · by [Opes](https://opes.dev)
 
 Windows tool for downloading audio and video with short `yt` commands. Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), with bundled **ffmpeg** and **deno**. Tuned for YouTube; works with most sites yt-dlp supports.
 
 | | |
 |---|---|
 | Author | [Opes](https://opes.dev) |
-| Version | **1.0.0** (see [`VERSION`](VERSION)) |
+| Version | **1.0.1** (see [`VERSION`](VERSION)) |
 | License | [MIT](LICENSE) |
 | Platform | Windows 10+ **x64** (Intel/AMD) |
 | Install | `%LOCALAPPDATA%\RIP-Demon\` (per-user, no admin) |
@@ -427,9 +427,9 @@ powershell -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
 
 Output:
 
-- `dist\RIP-Demon-1.0.0-windows.zip` — always
+- `dist\RIP-Demon-1.0.1-windows.zip` — always
 - `dist\SHA256SUMS.txt` — checksums for the packaged zip
-- `dist\RIP-Demon-Setup-1.0.0.exe` — if [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed
+- `dist\RIP-Demon-Setup-1.0.1.exe` — if [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed
 
 The zip includes a root `Install.cmd`. Tools are downloaded at install time (not shipped inside the zip).
 
@@ -462,7 +462,7 @@ CI runs smoke tests on `windows-latest` (see `.github/workflows/ci.yml`).
 
 ```text
 rip-demon/
-  VERSION                 App version (1.0.0)
+  VERSION                 App version (1.0.1)
   README.md               This documentation
   LICENSE                 MIT — Opes
   CHANGELOG.md

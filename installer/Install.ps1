@@ -35,7 +35,7 @@ if (-not (Test-Path $versionFile)) {
 $version = if (Test-Path $versionFile) {
     (Get-Content -Path $versionFile -Raw).Trim()
 } else {
-    '1.0.0'
+    '1.0.1'
 }
 
 Write-Host "  Version:  $version"

@@ -625,7 +625,7 @@ function Copy-RipDemonAppFiles {
     $version = if (Test-Path -LiteralPath $versionFile) {
         (Get-Content -LiteralPath $versionFile -Raw).Trim()
     } else {
-        '1.0.0'
+        '1.0.1'
     }
 
     Copy-Item -Force $srcYt (Join-Path $binDir 'yt.cmd')

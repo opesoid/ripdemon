@@ -88,7 +88,7 @@ Assert-True ($tools -match 'opes\.dev') 'branding URL opes.dev present'
 
 $readme = Get-Content (Join-Path $ProjectRoot 'README.md') -Raw
 Assert-True ($readme -match 'opes\.dev') 'README mentions opes.dev'
-Assert-True ($readme -match 'Version 1\.0\.0|currently \*\*1\.0\.0\*\*|Version \| \*\*1\.0\.0\*\*') 'README documents 1.0.0'
+Assert-True ($readme -match 'Version 1\.0\.1|currently \*\*1\.0\.1\*\*|Version \| \*\*1\.0\.1\*\*') 'README documents 1.0.1'
 Assert-True ($readme -match 'web-install\.ps1') 'README documents web-install'
 Assert-True ($readme -match 'cdn\.jsdelivr\.net/gh/opesoid/ripdemon@main/installer/web-install\.ps1') 'README has jsDelivr one-liner install'
 
