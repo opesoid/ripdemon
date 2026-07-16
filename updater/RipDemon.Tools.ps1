@@ -32,10 +32,83 @@ function Write-RipDemonBanner {
 }
 
 function Get-RipDemonGitHubHeaders {
-    @{
+    $h = @{
         'User-Agent' = 'RIP-Demon'
         'Accept'     = 'application/vnd.github+json'
     }
+    $token = $env:RIPDEMON_GITHUB_TOKEN
+    if (-not $token) { $token = $env:GITHUB_TOKEN }
+    if ($token) { $h['Authorization'] = "Bearer $token" }
+    return $h
+}
+
+function Invoke-RipDemonGitHubApi {
+    <#
+    .SYNOPSIS
+      Call GitHub REST API. Returns $null on rate-limit / network errors so callers can fall back.
+    #>
+    param([Parameter(Mandatory)][string]$Uri)
+    try {
+        return Invoke-RestMethod -Uri $Uri -Headers (Get-RipDemonGitHubHeaders)
+    } catch {
+        $msg = [string]$_.Exception.Message
+        if ($msg -match 'rate limit') {
+            Write-Host '  GitHub API rate limit hit; using direct-download fallback.' -ForegroundColor Yellow
+        } else {
+            Write-Host "  GitHub API unavailable; using direct-download fallback." -ForegroundColor Yellow
+            Write-Host "  ($msg)" -ForegroundColor DarkGray
+        }
+        return $null
+    }
+}
+
+function Get-RipDemonGitHubLatestTag {
+    <#
+    .SYNOPSIS
+      Resolve the latest release tag via github.com redirect (does not use the REST API).
+    #>
+    param([Parameter(Mandatory)][string]$OwnerRepo)
+    $uri = "https://github.com/$OwnerRepo/releases/latest"
+
+    # Prefer curl: PowerShell 5.1 often hides Location on redirect errors.
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if ($curl) {
+        try {
+            # Do not follow redirects (-L): we need the Location of the first 302.
+            $headers = & curl.exe -sI $uri 2>$null
+            foreach ($line in @($headers)) {
+                if ($line -match '^[Ll]ocation:\s*(.+)$') {
+                    $loc = $Matches[1].Trim()
+                    if ($loc -match '/tag/([^/?#]+)') {
+                        return [uri]::UnescapeDataString($Matches[1])
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    $prev = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        try {
+            Invoke-WebRequest -Uri $uri -MaximumRedirection 0 -UseBasicParsing -Headers @{ 'User-Agent' = 'RIP-Demon' } | Out-Null
+        } catch {
+            $resp = $_.Exception.Response
+            if ($resp) {
+                $loc = $null
+                try { $loc = [string]$resp.Headers['Location'] } catch {}
+                if (-not $loc) {
+                    try { $loc = [string]$resp.GetResponseHeader('Location') } catch {}
+                }
+                if ($loc -and ($loc -match '/tag/([^/?#]+)')) {
+                    return [uri]::UnescapeDataString($Matches[1])
+                }
+            }
+        }
+    } finally {
+        $ProgressPreference = $prev
+    }
+    return $null
 }
 
 function Assert-RipDemonWindowsX64 {
@@ -93,7 +166,7 @@ function Save-RipDemonFile {
     }
     else {
         # Fallback: hide progress (showing it makes Invoke-WebRequest dramatically slower)
-        Write-Host '  curl.exe not found — using slower PowerShell download.' -ForegroundColor DarkYellow
+        Write-Host '  curl.exe not found - using slower PowerShell download.' -ForegroundColor DarkYellow
         $prev = $ProgressPreference
         $ProgressPreference = 'SilentlyContinue'
         try {
@@ -155,6 +228,8 @@ function Get-Sha256FromSumFile {
         finally {
             $ProgressPreference = $prev
         }
+        $certHash = $null
+        $certPath = $null
         foreach ($line in Get-Content -LiteralPath $tmp) {
             $trim = $line.Trim()
             if (-not $trim -or $trim.StartsWith('#')) { continue }
@@ -164,6 +239,21 @@ function Get-Sha256FromSumFile {
                 $name = $Matches[2].Trim().TrimStart('*').Replace('\', '/').Split('/')[-1]
                 if ($name -ieq $FileName) { return $hash }
             }
+            # Windows certutil-style (Deno publishes this as *.sha256sum):
+            #   Hash      : ABCDEF...
+            #   Path      : C:\...\filename.zip
+            if ($trim -match '^Hash\s*:\s*([a-fA-F0-9]{64})$') {
+                $certHash = $Matches[1].ToLowerInvariant()
+            }
+            elseif ($trim -match '^Path\s*:\s*(.+)$') {
+                $certPath = $Matches[1].Trim().Replace('\', '/').Split('/')[-1]
+            }
+        }
+        if ($certHash -and $certPath -and ($certPath -ieq $FileName)) {
+            return $certHash
+        }
+        if ($certHash -and -not $certPath) {
+            return $certHash
         }
     }
     finally {
@@ -173,28 +263,45 @@ function Get-Sha256FromSumFile {
 }
 
 function Get-YtDlpLatestRelease {
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest' -Headers (Get-RipDemonGitHubHeaders)
-    $asset = $release.assets | Where-Object { $_.name -eq 'yt-dlp.exe' } | Select-Object -First 1
-    if (-not $asset) {
-        throw 'Could not find yt-dlp.exe in the latest yt-dlp release.'
-    }
+    $directUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    $sumsUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS'
 
-    $sha = Get-AssetDigestSha256 -Asset $asset
-    if (-not $sha) {
-        $sumsAsset = $release.assets | Where-Object { $_.name -eq 'SHA2-256SUMS' } | Select-Object -First 1
-        if ($sumsAsset) {
-            $sha = Get-Sha256FromSumFile -SumFileUri $sumsAsset.browser_download_url -FileName 'yt-dlp.exe'
+    $release = Invoke-RipDemonGitHubApi -Uri 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'
+    if ($release) {
+        $asset = $release.assets | Where-Object { $_.name -eq 'yt-dlp.exe' } | Select-Object -First 1
+        if ($asset) {
+            $sha = Get-AssetDigestSha256 -Asset $asset
+            if (-not $sha) {
+                $sumsAsset = $release.assets | Where-Object { $_.name -eq 'SHA2-256SUMS' } | Select-Object -First 1
+                if ($sumsAsset) {
+                    $sha = Get-Sha256FromSumFile -SumFileUri $sumsAsset.browser_download_url -FileName 'yt-dlp.exe'
+                }
+            }
+            if ($sha) {
+                $ver = $release.tag_name.TrimStart('v')
+                return [pscustomobject]@{
+                    Tag     = $ver
+                    Version = $ver
+                    Url     = $asset.browser_download_url
+                    Size    = [long]$asset.size
+                    Sha256  = $sha
+                }
+            }
         }
     }
+
+    $tag = Get-RipDemonGitHubLatestTag -OwnerRepo 'yt-dlp/yt-dlp'
+    if (-not $tag) { $tag = 'latest' }
+    $ver = $tag.TrimStart('v')
+    $sha = Get-Sha256FromSumFile -SumFileUri $sumsUrl -FileName 'yt-dlp.exe'
     if (-not $sha) {
         throw 'Could not obtain SHA256 for yt-dlp.exe (missing digest / SHA2-256SUMS).'
     }
-
-    [pscustomobject]@{
-        Tag     = $release.tag_name.TrimStart('v')
-        Version = $release.tag_name.TrimStart('v')
-        Url     = $asset.browser_download_url
-        Size    = [long]$asset.size
+    return [pscustomobject]@{
+        Tag     = $ver
+        Version = $ver
+        Url     = $directUrl
+        Size    = [long]0
         Sha256  = $sha
     }
 }
@@ -240,27 +347,41 @@ function Install-YtDlp {
 }
 
 function Get-FfmpegDownloadUrl {
-    # Prefer shared build (~76MB) over static (~161MB) for faster installs
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/yt-dlp/FFmpeg-Builds/releases/latest' -Headers (Get-RipDemonGitHubHeaders)
-    $asset = $release.assets | Where-Object {
-        $_.name -match 'ffmpeg-.*?-win64-gpl-shared\.zip$'
-    } | Select-Object -First 1
-    if (-not $asset) {
+    # Prefer shared build (~76MB) over static (~161MB) for faster installs.
+    # Stable asset name works via /releases/latest/download/ without the REST API.
+    $sharedName = 'ffmpeg-master-latest-win64-gpl-shared.zip'
+    $directUrl = "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/$sharedName"
+
+    $release = Invoke-RipDemonGitHubApi -Uri 'https://api.github.com/repos/yt-dlp/FFmpeg-Builds/releases/latest'
+    if ($release) {
         $asset = $release.assets | Where-Object {
-            $_.name -match 'ffmpeg-.*?-win64-gpl\.zip$' -and $_.name -notmatch 'shared'
+            $_.name -match 'ffmpeg-.*?-win64-gpl-shared\.zip$'
         } | Select-Object -First 1
-    }
-    if (-not $asset) {
-        throw 'Could not find a win64 gpl FFmpeg zip in yt-dlp/FFmpeg-Builds releases.'
+        if (-not $asset) {
+            $asset = $release.assets | Where-Object {
+                $_.name -match 'ffmpeg-.*?-win64-gpl\.zip$' -and $_.name -notmatch 'shared'
+            } | Select-Object -First 1
+        }
+        if ($asset) {
+            $sha = Get-AssetDigestSha256 -Asset $asset
+            return [pscustomobject]@{
+                Tag    = $release.tag_name
+                Url    = $asset.browser_download_url
+                Name   = $asset.name
+                Size   = [long]$asset.size
+                Sha256 = $sha
+            }
+        }
     }
 
-    $sha = Get-AssetDigestSha256 -Asset $asset
+    $tag = Get-RipDemonGitHubLatestTag -OwnerRepo 'yt-dlp/FFmpeg-Builds'
+    if (-not $tag) { $tag = 'latest' }
     return [pscustomobject]@{
-        Tag    = $release.tag_name
-        Url    = $asset.browser_download_url
-        Name   = $asset.name
-        Size   = [long]$asset.size
-        Sha256 = $sha
+        Tag    = $tag
+        Url    = $directUrl
+        Name   = $sharedName
+        Size   = [long]0
+        Sha256 = $null
     }
 }
 
@@ -300,7 +421,7 @@ function Install-Ffmpeg {
 
     if (-not $Force -and (Test-Path $ffmpeg) -and (Test-Path $ffprobe) -and -not $currentTag) {
         # Legacy install without version marker — refresh once to pin a tag
-        Write-Host '  ffmpeg present but untagged — refreshing to pin release tag.' -ForegroundColor Yellow
+        Write-Host '  ffmpeg present but untagged - refreshing to pin release tag.' -ForegroundColor Yellow
     }
 
     $mb = if ($info.Size) { '{0:N0} MB' -f ($info.Size / 1MB) } else { '~80 MB' }
@@ -319,7 +440,7 @@ function Install-Ffmpeg {
             $saveParams.ExpectedSha256 = $info.Sha256
         }
         else {
-            Write-Host '  No SHA256 digest published for this FFmpeg asset — verifying size only.' -ForegroundColor DarkYellow
+            Write-Host '  No SHA256 digest published for this FFmpeg asset - verifying size only.' -ForegroundColor DarkYellow
         }
         Save-RipDemonFile @saveParams
 
@@ -351,37 +472,50 @@ function Install-Ffmpeg {
 
 function Get-DenoDownloadUrl {
     Assert-RipDemonWindowsX64
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/denoland/deno/releases/latest' -Headers (Get-RipDemonGitHubHeaders)
     $assetName = 'deno-x86_64-pc-windows-msvc.zip'
-    $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-    if (-not $asset) {
-        throw "Could not find $assetName in the latest Deno release."
-    }
+    $directUrl = "https://github.com/denoland/deno/releases/latest/download/$assetName"
+    $sumUrl = "$directUrl.sha256sum"
 
-    $sha = Get-AssetDigestSha256 -Asset $asset
-    if (-not $sha) {
-        $sumName = "$assetName.sha256sum"
-        $sumAsset = $release.assets | Where-Object { $_.name -eq $sumName } | Select-Object -First 1
-        if ($sumAsset) {
-            $sha = Get-Sha256FromSumFile -SumFileUri $sumAsset.browser_download_url -FileName $assetName
+    $release = Invoke-RipDemonGitHubApi -Uri 'https://api.github.com/repos/denoland/deno/releases/latest'
+    if ($release) {
+        $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+        if ($asset) {
+            $sha = Get-AssetDigestSha256 -Asset $asset
+            if (-not $sha) {
+                $sumName = "$assetName.sha256sum"
+                $sumAsset = $release.assets | Where-Object { $_.name -eq $sumName } | Select-Object -First 1
+                if ($sumAsset) {
+                    $sha = Get-Sha256FromSumFile -SumFileUri $sumAsset.browser_download_url -FileName $assetName
+                }
+            }
+            if (-not $sha) {
+                try {
+                    $sha = Get-Sha256FromSumFile -SumFileUri "$($asset.browser_download_url).sha256sum" -FileName $assetName
+                } catch {}
+            }
+            if ($sha) {
+                return [pscustomobject]@{
+                    Tag    = $release.tag_name.TrimStart('v')
+                    Url    = $asset.browser_download_url
+                    Name   = $asset.name
+                    Size   = [long]$asset.size
+                    Sha256 = $sha
+                }
+            }
         }
     }
-    if (-not $sha) {
-        # Deno sometimes publishes bare .sha256sum content as "hash  filename"
-        $sumUrl = "$($asset.browser_download_url).sha256sum"
-        try {
-            $sha = Get-Sha256FromSumFile -SumFileUri $sumUrl -FileName $assetName
-        } catch {}
-    }
+
+    $tag = Get-RipDemonGitHubLatestTag -OwnerRepo 'denoland/deno'
+    if (-not $tag) { $tag = 'latest' }
+    $sha = Get-Sha256FromSumFile -SumFileUri $sumUrl -FileName $assetName
     if (-not $sha) {
         throw "Could not obtain SHA256 for $assetName."
     }
-
-    [pscustomobject]@{
-        Tag    = $release.tag_name.TrimStart('v')
-        Url    = $asset.browser_download_url
-        Name   = $asset.name
-        Size   = [long]$asset.size
+    return [pscustomobject]@{
+        Tag    = $tag.TrimStart('v')
+        Url    = $directUrl
+        Name   = $assetName
+        Size   = [long]0
         Sha256 = $sha
     }
 }
@@ -1023,6 +1157,11 @@ function Invoke-RipDemonFirstRunWizard {
 
     $defaults = Get-RipDemonDefaultOutputDirs
     if ($Skip) {
+        $existing = Join-Path $InstallRoot 'config.ini'
+        if (Test-Path -LiteralPath $existing) {
+            Write-Host "  Keeping existing config: $existing" -ForegroundColor DarkGray
+            return (Get-RipDemonConfig -InstallRoot $InstallRoot)
+        }
         $path = Write-RipDemonUserConfig -InstallRoot $InstallRoot `
             -Mp3Dir $defaults.Mp3 -Mp4Dir $defaults.Mp4 `
             -Quality '1080' -CookiesBrowser '' `

@@ -73,7 +73,7 @@ Write-Step 'Installing yt-dlp + ffmpeg + deno...'
 Write-Host '  Stage A/3: yt-dlp' -ForegroundColor DarkGray
 Write-Host '  Stage B/3: FFmpeg (~80 MB)' -ForegroundColor DarkGray
 Write-Host '  Stage C/3: deno (~40 MB)' -ForegroundColor DarkGray
-Write-Host '  First install downloads ~100-150 MB — please wait.' -ForegroundColor DarkGray
+Write-Host '  First install downloads ~100-150 MB - please wait.' -ForegroundColor DarkGray
 if (-not $SkipTools) {
     Ensure-RipDemonTools -ToolsDir $toolsDir | Out-Null
 } else {

@@ -528,6 +528,7 @@ rip-demon/
 | One-liner fails / still says “No GitHub release” | Use the **jsDelivr** one-liner above (not `raw.githubusercontent.com` — that CDN can lag). Or install from this repo with `installer\Install.cmd` |
 | `running scripts is disabled` / execution policy | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry the one-liner. Or use the Bypass command under [PowerShell script blocking](#powershell-script-blocking) |
 | App update fails | Check internet / GitHub; try `yt update -SkipApp` for tools only |
+| Install fails with GitHub API rate limit | Re-run the installer or `yt update` (tool downloads fall back to direct GitHub URLs). Optional: set `GITHUB_TOKEN` or `RIPDEMON_GITHUB_TOKEN` for a higher API limit |
 
 ---
 
