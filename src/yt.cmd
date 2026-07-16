@@ -27,7 +27,8 @@ if not exist "%RIPDEMON_CLI%" (
 )
 
 REM Forward all args to PowerShell CLI (mp3/mp4/info/gui/config/help/...)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%RIPDEMON_CLI%" %*
+REM -STA required for WinForms (yt gui)
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%RIPDEMON_CLI%" %*
 exit /b %ERRORLEVEL%
 
 :version
@@ -40,7 +41,7 @@ echo by Opes - https://opes.dev
 if exist "%RIPDEMON_YTDLP%" (
   for /f "delims=" %%V in ('"%RIPDEMON_YTDLP%" --version 2^>nul') do echo yt-dlp %%V
 ) else (
-  echo yt-dlp not installed — run: yt update
+  echo yt-dlp not installed - run: yt update
 )
 if exist "%RIPDEMON_FFMPEG%" (
   for /f "delims=" %%V in ('"%RIPDEMON_FFMPEG%" -version 2^>nul') do (
@@ -48,7 +49,7 @@ if exist "%RIPDEMON_FFMPEG%" (
     goto :ffmpeg_tag
   )
 ) else (
-  echo ffmpeg not installed — run: yt update
+  echo ffmpeg not installed - run: yt update
   goto :deno_ver
 )
 :ffmpeg_tag
@@ -63,12 +64,12 @@ if exist "%RIPDEMON_TOOLS%\deno.exe" (
     goto :eof
   )
 ) else (
-  echo deno not installed — run: yt update
+  echo deno not installed - run: yt update
 )
 exit /b 0
 
 :update
-REM Forward optional flags only (%2+). Do NOT use %* after shift — cmd's %* ignores SHIFT
+REM Forward optional flags only (%2+). Do NOT use %* after shift - cmd's %* ignores SHIFT
 REM and would pass the literal "update" as -InstallRoot.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%RIPDEMON_UPDATER%\Update.ps1" %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%

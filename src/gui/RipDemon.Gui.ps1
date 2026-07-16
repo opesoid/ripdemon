@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  WinForms download window for RIP Demon — all CLI options in a simple layout.
+  WinForms download window for RIP Demon - all CLI options in a simple layout.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -161,7 +161,7 @@ $lblTitle = New-Label 'RIP Demon' 20 12 (New-Object System.Drawing.Font('Segoe U
 $hdr.Controls.Add($lblTitle)
 
 $lblBrand = New-Object System.Windows.Forms.LinkLabel
-$lblBrand.Text = "by Opes  ·  v$appVer  ·  opes.dev"
+$lblBrand.Text = "by Opes  |  v$appVer  |  opes.dev"
 $lblBrand.Location = New-Object System.Drawing.Point(20, 40)
 $lblBrand.AutoSize = $true
 $lblBrand.LinkColor = $cMuted
@@ -199,7 +199,7 @@ $form.Controls.Add($btnPaste)
 $form.Controls.Add((New-Label 'Format' 20 144 $null $cMuted))
 
 $btnMp3 = New-Object System.Windows.Forms.Button
-$btnMp3.Text = 'MP3  ·  Audio'
+$btnMp3.Text = 'MP3  |  Audio'
 $btnMp3.Location = New-Object System.Drawing.Point(20, 164)
 $btnMp3.Size = New-Object System.Drawing.Size(290, 40)
 $btnMp3.Tag = 'mp3'
@@ -207,7 +207,7 @@ Style-Button $btnMp3 -Primary
 $form.Controls.Add($btnMp3)
 
 $btnMp4 = New-Object System.Windows.Forms.Button
-$btnMp4.Text = 'MP4  ·  Video'
+$btnMp4.Text = 'MP4  |  Video'
 $btnMp4.Location = New-Object System.Drawing.Point(320, 164)
 $btnMp4.Size = New-Object System.Drawing.Size(290, 40)
 $btnMp4.Tag = 'mp4'
@@ -256,7 +256,7 @@ if ($cfg.CookiesBrowser) {
 Style-Combo $cmbCookies
 $pnlOpts.Controls.Add($cmbCookies)
 
-# Middle column — toggles
+# Middle column - toggles
 $chkNoPl = New-Object System.Windows.Forms.CheckBox
 $chkNoPl.Text = 'No playlist (this video only)'
 $chkNoPl.Location = New-Object System.Drawing.Point(200, 54)
@@ -278,7 +278,7 @@ $chkThumb.Checked = $false
 Style-Check $chkThumb
 $pnlOpts.Controls.Add($chkThumb)
 
-# Right column — MP4 extras
+# Right column - MP4 extras
 $chkSubs = New-Object System.Windows.Forms.CheckBox
 $chkSubs.Text = 'Subtitles'
 $chkSubs.Location = New-Object System.Drawing.Point(430, 54)
@@ -307,11 +307,11 @@ function Set-StatusHint {
     $dir = if ($isMp4) { $cfg.Mp4Dir } else { $cfg.Mp3Dir }
     $lblStatus.ForeColor = $cMuted
     if ($chkThumb.Checked) {
-        $lblStatus.Text = "Thumbnail only → $dir"
+        $lblStatus.Text = "Thumbnail only -> $dir"
     } elseif ($isMp4) {
-        $lblStatus.Text = "MP4 → $dir"
+        $lblStatus.Text = "MP4 -> $dir"
     } else {
-        $lblStatus.Text = "MP3 → $dir"
+        $lblStatus.Text = "MP3 -> $dir"
     }
 }
 
@@ -461,7 +461,7 @@ $btnGo.Add_Click({
         if ($p.ExitCode -eq 0) {
             $dir = if ($mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
             $lblStatus.ForeColor = $cOk
-            $lblStatus.Text = "Done — saved to $dir"
+            $lblStatus.Text = "Done - saved to $dir"
         } else {
             $lblStatus.ForeColor = $cAccentHi
             $lblStatus.Text = "Failed (exit $($p.ExitCode)). Try yt update, or enable cookies for age-gated videos."

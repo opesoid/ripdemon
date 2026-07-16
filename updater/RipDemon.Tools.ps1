@@ -841,12 +841,15 @@ function New-RipDemonGuiShortcut {
         [Parameter(Mandatory)][string]$GuiPs1,
         [string]$IconPath
     )
+    # Full path + -STA: WinForms needs a single-threaded apartment; Hidden hides the console.
+    $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $psExe)) { $psExe = 'powershell.exe' }
     $sc = $WshShell.CreateShortcut($ShortcutPath)
-    $sc.TargetPath = 'powershell.exe'
-    $sc.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$GuiPs1`""
+    $sc.TargetPath = $psExe
+    $sc.Arguments = "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$GuiPs1`""
     $sc.WorkingDirectory = $InstallRoot
     $sc.Description = 'RIP Demon download window'
-    $sc.WindowStyle = 7  # Minimized — GUI is WinForms; hide the console flash
+    $sc.WindowStyle = 7  # Minimized (hides console flash with -WindowStyle Hidden)
     if ($IconPath) {
         $sc.IconLocation = "$IconPath,0"
     }

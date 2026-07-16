@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   RIP Demon CLI engine (download, info, config). Invoked by bin\yt.cmd.
-  Uses $args only (no param [string[]] — that splits a single string into chars).
+  Uses $args only (no param [string[]] - that splits a single string into chars).
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -57,7 +57,7 @@ function ConvertTo-RipDemonArgList {
         Write-Output -NoEnumerate $out
         return
     }
-    # Strings are IEnumerable of chars — never foreach a bare string.
+    # Strings are IEnumerable of chars - never foreach a bare string.
     if ($Tokens -is [string]) {
         [void]$out.Add([string]$Tokens)
         Write-Output -NoEnumerate $out
@@ -68,7 +68,7 @@ function ConvertTo-RipDemonArgList {
         Write-Output -NoEnumerate $Tokens
         return
     }
-    # Mistaken nested array (e.g. Object[]{ string[] }) — flatten one level
+    # Mistaken nested array (e.g. Object[]{ string[] }) - flatten one level
     if ($Tokens -is [System.Array] -and $Tokens.Count -eq 1 -and $Tokens[0] -is [System.Array] -and $Tokens[0] -isnot [string]) {
         ConvertTo-RipDemonArgList -Tokens $Tokens[0]
         return
@@ -225,7 +225,7 @@ function Invoke-RipDemonYtDlp {
     Write-Host ''
     Write-Host "  $Label..." -ForegroundColor Cyan
     & $YtDlp @Arguments
-    # PS 5.1 can leave $LASTEXITCODE $null after a successful native exe — treat null as 0.
+    # PS 5.1 can leave $LASTEXITCODE $null after a successful native exe - treat null as 0.
     $code = $LASTEXITCODE
     if ($null -eq $code) {
         $code = if ($?) { 0 } else { 1 }
@@ -397,7 +397,7 @@ function Show-RipDemonConfig {
     Write-Host '  by Opes - https://opes.dev' -ForegroundColor DarkGray
     Write-Host "  File: $($cfg.ConfigPath)"
     if (-not (Test-Path -LiteralPath $cfg.ConfigPath)) {
-        Write-Host '  (no user config yet — using defaults)' -ForegroundColor DarkGray
+        Write-Host '  (no user config yet - using defaults)' -ForegroundColor DarkGray
     }
     Write-Host ''
     Write-Host "  mp3_dir:         $($cfg.Mp3Dir)"
@@ -532,7 +532,7 @@ try {
                 Write-Host 'Error: GUI script not found. Re-run the installer.' -ForegroundColor Red
                 exit 1
             }
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $gui
+            & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File $gui
             exit $LASTEXITCODE
         }
         default {

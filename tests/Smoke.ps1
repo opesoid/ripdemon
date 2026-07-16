@@ -127,6 +127,7 @@ Assert-True ($gui -match '--quality') 'GUI supports MP4 quality'
 Assert-True ($gui -match '--cookies-from-browser') 'GUI supports cookies'
 Assert-True ($gui -match '--no-playlist') 'GUI supports no-playlist'
 Assert-True ($gui -match '--open') 'GUI supports open folder'
+Assert-True ($gui -notmatch '[^\x00-\x7F]') 'GUI script is ASCII-only (PS 5.1 safe)'
 
 $cli = Get-Content (Join-Path $ProjectRoot 'src\lib\RipDemon.Cli.ps1') -Raw
 Assert-True ($cli -match '--no-playlist') 'CLI supports --no-playlist'
