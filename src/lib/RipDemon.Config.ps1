@@ -47,6 +47,27 @@ function Get-RipDemonIniBool {
     }
 }
 
+function Test-RipDemonCookieDecryptError {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $false }
+    # Chrome/Edge App-Bound Encryption often breaks --cookies-from-browser on Windows.
+    # See https://github.com/yt-dlp/yt-dlp/issues/10927
+    return [bool]($Text -match '(?i)Failed to decrypt with DPAPI|failed to decrypt.*(cookie|DPAPI)|Could not copy Chrome cookie|Aborting since cookies could not be decrypted')
+}
+
+function Remove-RipDemonCookiesFromBrowserArgs {
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.Generic.List[string]]$ArgumentList
+    )
+    for ($i = $ArgumentList.Count - 2; $i -ge 0; $i--) {
+        if ($ArgumentList[$i] -eq '--cookies-from-browser') {
+            $ArgumentList.RemoveAt($i + 1)
+            $ArgumentList.RemoveAt($i)
+        }
+    }
+}
+
 function Get-RipDemonConfig {
     param(
         [string]$InstallRoot,

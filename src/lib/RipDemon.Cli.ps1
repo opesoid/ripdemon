@@ -283,23 +283,58 @@ function Show-RipDemonUsage {
 function Invoke-RipDemonYtDlp {
     param(
         [Parameter(Mandatory)][string[]]$Arguments,
-        [string]$Label = 'Downloading'
+        [string]$Label = 'Downloading',
+        [switch]$PassThru
     )
     if (-not (Test-Path -LiteralPath $YtDlp)) {
         Write-Host "Error: yt-dlp not found at `"$YtDlp`"" -ForegroundColor Red
         Write-Host 'Run: yt update'
+        if ($PassThru) {
+            return [pscustomobject]@{ ExitCode = 1; Output = 'yt-dlp not found' }
+        }
         return 1
     }
     $env:Path = "$ToolsDir;$env:Path"
     Write-Host ''
     Write-Host "  $Label..." -ForegroundColor Cyan
-    & $YtDlp @Arguments
+    # Capture stdout+stderr so callers can detect cookie/DPAPI failures, while still printing live.
+    $output = & $YtDlp @Arguments 2>&1
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($output)) {
+        $text = if ($line -is [System.Management.Automation.ErrorRecord]) { $line.ToString() } else { [string]$line }
+        [void]$lines.Add($text)
+        Write-Host $text
+    }
     # PS 5.1 can leave $LASTEXITCODE $null after a successful native exe - treat null as 0.
     $code = $LASTEXITCODE
     if ($null -eq $code) {
         $code = if ($?) { 0 } else { 1 }
     }
+    if ($PassThru) {
+        return [pscustomobject]@{
+            ExitCode = [int]$code
+            Output   = ($lines -join "`n")
+        }
+    }
     return [int]$code
+}
+
+function Invoke-RipDemonYtDlpWithCookieFallback {
+    param(
+        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ArgumentList,
+        [string]$Label = 'Downloading',
+        [string]$CookiesBrowser = ''
+    )
+    $result = Invoke-RipDemonYtDlp -Arguments $ArgumentList.ToArray() -Label $Label -PassThru
+    if ($result.ExitCode -eq 0) { return [int]$result.ExitCode }
+    if (-not $CookiesBrowser) { return [int]$result.ExitCode }
+    if (-not (Test-RipDemonCookieDecryptError -Text $result.Output)) { return [int]$result.ExitCode }
+
+    Write-Host ''
+    Write-Host "  Cookie decrypt failed ($CookiesBrowser / DPAPI). Retrying without cookies..." -ForegroundColor Yellow
+    Write-Host '  Tip: set cookies to (none), or use firefox. Chrome often blocks cookie export on Windows.' -ForegroundColor DarkGray
+    Remove-RipDemonCookiesFromBrowserArgs -ArgumentList $ArgumentList
+    return [int](Invoke-RipDemonYtDlp -Arguments $ArgumentList.ToArray() -Label "$Label (no cookies)")
 }
 
 function Get-RipDemonMp4Format {
@@ -386,14 +421,22 @@ function Invoke-RipDemonDownload {
         $yargs.Add('--')
         $yargs.Add($url)
 
-        $code = Invoke-RipDemonYtDlp -Arguments $yargs.ToArray() -Label "${prefix}Downloading"
+        $code = Invoke-RipDemonYtDlpWithCookieFallback `
+            -ArgumentList $yargs `
+            -Label "${prefix}Downloading" `
+            -CookiesBrowser ([string]$Opt.CookiesBrowser)
         if ($code -ne 0) {
             $exit = $code
             Write-Host ''
             Write-Host '  Download failed.' -ForegroundColor Red
             Write-Host '  Try: yt update'
-            Write-Host '       yt mp3 --cookies-from-browser chrome <url>'
+            Write-Host '       yt mp3   (cookies off - leave cookies_browser blank in config)'
+            Write-Host '       yt mp3 --cookies-from-browser firefox <url>'
             Write-Host '       Copy the link and run: yt mp3'
+            if ($Opt.CookiesBrowser -match '(?i)chrome|brave|edge') {
+                Write-Host '  Note: Chrome/Edge cookie decrypt often fails on Windows (DPAPI / app-bound encryption).' -ForegroundColor DarkGray
+                Write-Host '        Use (none) for normal videos, or firefox / a cookies.txt export for age-gated ones.' -ForegroundColor DarkGray
+            }
             continue
         }
 
@@ -441,7 +484,10 @@ function Invoke-RipDemonInfo {
         $yargs.Add('--')
         $yargs.Add($url)
 
-        $code = Invoke-RipDemonYtDlp -Arguments $yargs.ToArray() -Label 'Fetching info'
+        $code = Invoke-RipDemonYtDlpWithCookieFallback `
+            -ArgumentList $yargs `
+            -Label 'Fetching info' `
+            -CookiesBrowser ([string]$Opt.CookiesBrowser)
         if ($code -ne 0) { $exit = $code; continue }
 
         Write-Host ''
@@ -449,8 +495,12 @@ function Invoke-RipDemonInfo {
         $listArgs = New-Object System.Collections.Generic.List[string]
         $listArgs.Add('--ffmpeg-location'); $listArgs.Add($ToolsDir)
         if ($Opt.NoPlaylist) { $listArgs.Add('--no-playlist') }
-        if ($Opt.CookiesBrowser) {
-            $listArgs.Add('--cookies-from-browser'); $listArgs.Add($Opt.CookiesBrowser)
+        # Reuse cookies only if the info fetch kept them (may have fallen back after DPAPI).
+        for ($i = 0; $i -lt $yargs.Count; $i++) {
+            if ($yargs[$i] -eq '--cookies-from-browser' -and ($i + 1) -lt $yargs.Count) {
+                $listArgs.Add('--cookies-from-browser'); $listArgs.Add($yargs[$i + 1])
+                break
+            }
         }
         $listArgs.Add('-F')
         $listArgs.Add('--')

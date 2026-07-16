@@ -460,6 +460,61 @@ function Update-DownloadProgressLine {
     }
 }
 
+function Invoke-RipDemonGuiYtDlpProcess {
+    param(
+        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ArgumentList
+    )
+
+    $argLine = ($ArgumentList | ForEach-Object {
+        if ($_ -match '[\s"]') { '"{0}"' -f ($_ -replace '"', '""') } else { $_ }
+    }) -join ' '
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $YtDlp
+    $psi.Arguments = $argLine
+    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+
+    $captured = New-Object System.Text.StringBuilder
+    $stderr = $proc.StandardError
+    $stdout = $proc.StandardOutput
+    while (-not $proc.HasExited) {
+        while (($line = $stderr.ReadLine()) -ne $null) {
+            [void]$captured.AppendLine($line)
+            Update-DownloadProgressLine $line
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+        while (($line = $stdout.ReadLine()) -ne $null) {
+            [void]$captured.AppendLine($line)
+            Update-DownloadProgressLine $line
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+        Start-Sleep -Milliseconds 80
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    while (($line = $stderr.ReadLine()) -ne $null) {
+        [void]$captured.AppendLine($line)
+        Update-DownloadProgressLine $line
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    while (($line = $stdout.ReadLine()) -ne $null) {
+        [void]$captured.AppendLine($line)
+        Update-DownloadProgressLine $line
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    $proc.WaitForExit()
+    return [pscustomobject]@{
+        ExitCode = [int]$proc.ExitCode
+        Output   = $captured.ToString()
+    }
+}
+
 function Invoke-RipDemonGuiDownload {
     param(
         [Parameter(Mandatory)][string]$Mode,
@@ -483,7 +538,8 @@ function Invoke-RipDemonGuiDownload {
 
     if ($chkNoPl.Checked) { $yargs.Add('--no-playlist') }
     $cookies = $cmbCookies.Text.Trim()
-    if ($cookies -and $cookies -ne '(none)') {
+    $cookiesEnabled = ($cookies -and $cookies -ne '(none)')
+    if ($cookiesEnabled) {
         $yargs.Add('--cookies-from-browser'); $yargs.Add($cookies)
     }
 
@@ -524,46 +580,31 @@ function Invoke-RipDemonGuiDownload {
     $yargs.Add('--')
     $yargs.Add($Url)
 
-    $argLine = ($yargs | ForEach-Object {
-        if ($_ -match '[\s"]') { '"{0}"' -f ($_ -replace '"', '""') } else { $_ }
-    }) -join ' '
+    $result = Invoke-RipDemonGuiYtDlpProcess -ArgumentList $yargs
+    if ($result.ExitCode -eq 0) {
+        return [pscustomobject]@{ ExitCode = 0; CookieFallback = $false; CookieError = $false }
+    }
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $YtDlp
-    $psi.Arguments = $argLine
-    $psi.RedirectStandardError = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    [void]$proc.Start()
-
-    $stderr = $proc.StandardError
-    $stdout = $proc.StandardOutput
-    while (-not $proc.HasExited) {
-        while (($line = $stderr.ReadLine()) -ne $null) {
-            Update-DownloadProgressLine $line
-            [System.Windows.Forms.Application]::DoEvents()
+    if ($cookiesEnabled -and (Test-RipDemonCookieDecryptError -Text $result.Output)) {
+        $lblStatus.ForeColor = $cMuted
+        $lblStatus.Text = "Cookie decrypt failed ($cookies). Retrying without cookies..."
+        $lblProgress.Text = 'Retrying...'
+        $pbDownload.Value = 0
+        $form.Refresh()
+        Remove-RipDemonCookiesFromBrowserArgs -ArgumentList $yargs
+        $retry = Invoke-RipDemonGuiYtDlpProcess -ArgumentList $yargs
+        return [pscustomobject]@{
+            ExitCode       = [int]$retry.ExitCode
+            CookieFallback = $true
+            CookieError    = $true
         }
-        while (($line = $stdout.ReadLine()) -ne $null) {
-            Update-DownloadProgressLine $line
-            [System.Windows.Forms.Application]::DoEvents()
-        }
-        Start-Sleep -Milliseconds 80
-        [System.Windows.Forms.Application]::DoEvents()
     }
-    while (($line = $stderr.ReadLine()) -ne $null) {
-        Update-DownloadProgressLine $line
-        [System.Windows.Forms.Application]::DoEvents()
+
+    return [pscustomobject]@{
+        ExitCode       = [int]$result.ExitCode
+        CookieFallback = $false
+        CookieError    = (Test-RipDemonCookieDecryptError -Text $result.Output)
     }
-    while (($line = $stdout.ReadLine()) -ne $null) {
-        Update-DownloadProgressLine $line
-        [System.Windows.Forms.Application]::DoEvents()
-    }
-    $proc.WaitForExit()
-    return $proc.ExitCode
 }
 
 Update-ModeUi
@@ -599,20 +640,29 @@ $btnGo.Add_Click({
     $form.Refresh()
 
     try {
-        $exitCode = Invoke-RipDemonGuiDownload -Mode $mode -Url $url
+        $result = Invoke-RipDemonGuiDownload -Mode $mode -Url $url
+        $exitCode = [int]$result.ExitCode
         if ($exitCode -eq 0) {
             $dir = if ($mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
             $pbDownload.Value = 100
             $lblProgress.Text = 'Complete'
             $lblStatus.ForeColor = $cOk
-            $lblStatus.Text = "Done - saved to $dir"
+            if ($result.CookieFallback) {
+                $lblStatus.Text = "Done (cookies skipped) - saved to $dir"
+            } else {
+                $lblStatus.Text = "Done - saved to $dir"
+            }
             if ($chkOpen.Checked) {
                 try { Start-Process -FilePath 'explorer.exe' -ArgumentList $dir | Out-Null } catch {}
             }
         } else {
             $lblProgress.Text = 'Failed'
             $lblStatus.ForeColor = $cAccentHi
-            $lblStatus.Text = "Failed (exit $exitCode). Try yt update, or enable cookies for age-gated videos."
+            if ($result.CookieError) {
+                $lblStatus.Text = 'Failed: Chrome/Edge cookie decrypt (DPAPI). Set Cookies browser to (none) or firefox.'
+            } else {
+                $lblStatus.Text = "Failed (exit $exitCode). Try yt update, or cookies via firefox for age-gated videos."
+            }
         }
     } catch {
         $lblProgress.Text = 'Error'

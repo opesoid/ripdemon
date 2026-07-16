@@ -517,9 +517,10 @@ rip-demon/
 |---------|-----|
 | `yt` is not recognized | Open a **new** terminal after install, or use the installer window (PATH is primed there). Confirm `%LOCALAPPDATA%\RIP-Demon\bin` is on your User PATH. |
 | `yt-dlp not found` | Run `yt update` |
-| Download / site errors | Run `yt update`; try `--cookies-from-browser chrome`; copy the link and run `yt mp3` |
+| Download / site errors | Run `yt update`; copy the link and run `yt mp3` (leave cookies off for most videos) |
+| `Failed to decrypt with DPAPI` | Chrome/Edge block cookie export on many Windows PCs. Set **Cookies browser** to `(none)` (or clear `cookies_browser=` in `config.ini`). RIP Demon retries without cookies automatically. For age-gated videos, try `--cookies-from-browser firefox` instead. |
 | PowerShell: `The ampersand (&) character is not allowed` | Do not type long `youtube.com` URLs with `&` on the command line. Copy the link and run `yt mp3` (clipboard or paste prompt), or use `yt mp3 https://youtu.be/VIDEO_ID` |
-| Age-gated or private video | `--cookies-from-browser` with a logged-in browser profile |
+| Age-gated or private video | Prefer `--cookies-from-browser firefox` (Chrome often fails DPAPI on Windows). Or export a `cookies.txt` and pass it with yt-dlp `--cookies`. |
 | SHA256 / size mismatch | Re-run `yt update`; check proxy, VPN, or antivirus interference |
 | Install fails on `.ps1` double-click | Use `Install.cmd` instead |
 | Slow first install | Normal — FFmpeg (~80 MB) and deno (~40 MB) download once |
