@@ -262,7 +262,15 @@ yt version
 yt update
 ```
 
-Unquoted `watch?v=ID` often still works in CMD (RIP Demon rejoins `=`-split arguments), but **quoting is the safest habit**.
+**Always quote URLs that contain `&`** — especially in **PowerShell**, which rejects bare `&` before `yt` even runs:
+
+```powershell
+yt mp3 "https://www.youtube.com/watch?v=VIDEO_ID&list=PLxxxx"
+# or copy the link, then:
+yt mp3
+```
+
+Unquoted `watch?v=ID` often still works in **CMD** (RIP Demon rejoins `=`-split arguments), but quoting is the safest habit everywhere.
 
 ---
 
@@ -503,6 +511,7 @@ rip-demon/
 | `yt` is not recognized | Open a **new** terminal after install, or use the installer window (PATH is primed there). Confirm `%LOCALAPPDATA%\RIP-Demon\bin` is on your User PATH. |
 | `yt-dlp not found` | Run `yt update` |
 | Download / site errors | Run `yt update`; try `--cookies-from-browser chrome`; quote URLs that contain `&` |
+| PowerShell: `The ampersand (&) character is not allowed` | Quote the URL: `yt mp3 "https://...&list=..."`. Or copy the link and run `yt mp3` (clipboard). In PowerShell you can also use `yt mp3 --% https://...&list=...` |
 | Age-gated or private video | `--cookies-from-browser` with a logged-in browser profile |
 | SHA256 / size mismatch | Re-run `yt update`; check proxy, VPN, or antivirus interference |
 | Install fails on `.ps1` double-click | Use `Install.cmd` instead |

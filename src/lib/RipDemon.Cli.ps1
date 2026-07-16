@@ -204,10 +204,13 @@ function Show-RipDemonUsage {
     Write-Host '  Examples:'
     Write-Host '    yt mp3'
     Write-Host '    yt mp4 --1080 --open "https://youtu.be/VIDEO_ID"'
+    Write-Host '    yt mp3 "https://www.youtube.com/watch?v=VIDEO_ID&list=..."'
     Write-Host '    yt mp3 urls.txt'
     Write-Host '    yt mp4 --subs en --sponsorblock <url>'
     Write-Host '    yt info <url>'
     Write-Host '    yt mp3 -- --download-archive archive.txt <url>'
+    Write-Host ''
+    Write-Host '  PowerShell tip: always quote URLs that contain &  (or copy the link and run: yt mp3)'
     Write-Host ''
 }
 
