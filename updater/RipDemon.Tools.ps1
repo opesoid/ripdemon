@@ -653,6 +653,12 @@ function Copy-RipDemonAppFiles {
             Copy-Item -Force $src (Join-Path $InstallRoot $doc)
         }
     }
+    $srcAssets = Join-Path $ProjectRoot 'assets'
+    if (Test-Path -LiteralPath $srcAssets) {
+        $destAssets = Join-Path $InstallRoot 'assets'
+        New-Item -ItemType Directory -Force -Path $destAssets | Out-Null
+        Copy-Item -Force (Join-Path $srcAssets '*') $destAssets
+    }
 
     return [pscustomobject]@{
         Version = $version
@@ -749,6 +755,12 @@ function Update-RipDemonApp {
         $result = Install-RipDemonAppFromZip -ZipPath $zipPath -InstallRoot $InstallRoot
         Set-InstalledRipDemonCommit -InstallRoot $InstallRoot -Commit $latest.Commit
         Register-RipDemonUninstall -InstallRoot $InstallRoot -Version $result.Version | Out-Null
+        # Refresh GUI desktop / Start Menu icons after app files land
+        try {
+            New-RipDemonStartMenuShortcut -InstallRoot $InstallRoot -BinDir (Join-Path $InstallRoot 'bin') | Out-Null
+        } catch {
+            New-RipDemonDesktopShortcut -InstallRoot $InstallRoot | Out-Null
+        }
 
         return [pscustomobject]@{
             Updated = $true
@@ -794,6 +806,88 @@ function Remove-UserPathEntry {
     return $true
 }
 
+function Get-RipDemonAppIconPath {
+    <#
+    .SYNOPSIS
+      Path to the app .ico for shortcuts / Apps & features (prefers assets\icon.ico).
+    #>
+    param([Parameter(Mandatory)][string]$InstallRoot)
+    foreach ($rel in @('assets\icon.ico', 'assets\icon.png')) {
+        $p = Join-Path $InstallRoot $rel
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+    $ytDlp = Join-Path $InstallRoot 'tools\yt-dlp.exe'
+    if (Test-Path -LiteralPath $ytDlp) { return $ytDlp }
+    return $null
+}
+
+function Get-RipDemonDesktopShortcutPath {
+    Join-Path ([Environment]::GetFolderPath('Desktop')) 'RIP Demon.lnk'
+}
+
+function New-RipDemonGuiShortcut {
+    param(
+        [Parameter(Mandatory)]$WshShell,
+        [Parameter(Mandatory)][string]$ShortcutPath,
+        [Parameter(Mandatory)][string]$InstallRoot,
+        [Parameter(Mandatory)][string]$GuiPs1,
+        [string]$IconPath
+    )
+    $sc = $WshShell.CreateShortcut($ShortcutPath)
+    $sc.TargetPath = 'powershell.exe'
+    $sc.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$GuiPs1`""
+    $sc.WorkingDirectory = $InstallRoot
+    $sc.Description = 'RIP Demon download window'
+    $sc.WindowStyle = 7  # Minimized — GUI is WinForms; hide the console flash
+    if ($IconPath) {
+        $sc.IconLocation = "$IconPath,0"
+    }
+    $sc.Save()
+}
+
+function New-RipDemonDesktopShortcut {
+    param(
+        [Parameter(Mandatory)][string]$InstallRoot
+    )
+    $guiPs1 = Join-Path $InstallRoot 'gui\RipDemon.Gui.ps1'
+    if (-not (Test-Path -LiteralPath $guiPs1)) {
+        Write-Host '  Desktop shortcut skipped (GUI missing).' -ForegroundColor DarkYellow
+        return $false
+    }
+
+    $desktopLnk = Get-RipDemonDesktopShortcutPath
+    $iconPath = Get-RipDemonAppIconPath -InstallRoot $InstallRoot
+    $ws = New-Object -ComObject WScript.Shell
+    New-RipDemonGuiShortcut -WshShell $ws -ShortcutPath $desktopLnk `
+        -InstallRoot $InstallRoot -GuiPs1 $guiPs1 -IconPath $iconPath
+    Write-Host "  Desktop shortcut created: $desktopLnk" -ForegroundColor Green
+    return $true
+}
+
+function Remove-RipDemonDesktopShortcut {
+    param([string]$InstallRoot)
+    $desktopLnk = Get-RipDemonDesktopShortcutPath
+    if (-not (Test-Path -LiteralPath $desktopLnk)) { return $false }
+
+    # Only remove if it points at this install (or InstallRoot not given)
+    if ($InstallRoot) {
+        try {
+            $ws = New-Object -ComObject WScript.Shell
+            $sc = $ws.CreateShortcut($desktopLnk)
+            $args = [string]$sc.Arguments
+            $want = $InstallRoot.TrimEnd('\').ToLowerInvariant()
+            if ($args -and ($args.ToLowerInvariant() -notlike "*$want*")) {
+                Write-Host '  Skipping Desktop shortcut removal (belongs to another install).' -ForegroundColor DarkYellow
+                return $false
+            }
+        } catch {}
+    }
+
+    Remove-Item -LiteralPath $desktopLnk -Force -ErrorAction SilentlyContinue
+    Write-Host '  Desktop shortcut removed.' -ForegroundColor Yellow
+    return $true
+}
+
 function New-RipDemonStartMenuShortcut {
     param(
         [Parameter(Mandatory)][string]$InstallRoot,
@@ -803,6 +897,7 @@ function New-RipDemonStartMenuShortcut {
     New-Item -ItemType Directory -Force -Path $programs | Out-Null
 
     $ws = New-Object -ComObject WScript.Shell
+    $iconPath = Get-RipDemonAppIconPath -InstallRoot $InstallRoot
 
     $helpShortcut = Join-Path $programs 'RIP Demon Help.lnk'
     $sc = $ws.CreateShortcut($helpShortcut)
@@ -810,6 +905,7 @@ function New-RipDemonStartMenuShortcut {
     $sc.Arguments = '/k yt help'
     $sc.WorkingDirectory = $env:USERPROFILE
     $sc.Description = 'RIP Demon - yt help'
+    if ($iconPath) { $sc.IconLocation = "$iconPath,0" }
     $sc.Save()
 
     $promptShortcut = Join-Path $programs 'RIP Demon Command Prompt.lnk'
@@ -818,6 +914,7 @@ function New-RipDemonStartMenuShortcut {
     $sc2.Arguments = '/k echo RIP Demon && yt version'
     $sc2.WorkingDirectory = $env:USERPROFILE
     $sc2.Description = 'RIP Demon Command Prompt'
+    if ($iconPath) { $sc2.IconLocation = "$iconPath,0" }
     $sc2.Save()
 
     $dirs = Get-RipDemonOutputDirs
@@ -838,12 +935,8 @@ function New-RipDemonStartMenuShortcut {
     $guiPs1 = Join-Path $InstallRoot 'gui\RipDemon.Gui.ps1'
     if (Test-Path -LiteralPath $guiPs1) {
         $guiShortcut = Join-Path $programs 'RIP Demon.lnk'
-        $scGui = $ws.CreateShortcut($guiShortcut)
-        $scGui.TargetPath = 'powershell.exe'
-        $scGui.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$guiPs1`""
-        $scGui.WorkingDirectory = $InstallRoot
-        $scGui.Description = 'RIP Demon download window'
-        $scGui.Save()
+        New-RipDemonGuiShortcut -WshShell $ws -ShortcutPath $guiShortcut `
+            -InstallRoot $InstallRoot -GuiPs1 $guiPs1 -IconPath $iconPath
     }
 
     $uninstallCmd = Join-Path $InstallRoot 'Uninstall.cmd'
@@ -855,6 +948,8 @@ function New-RipDemonStartMenuShortcut {
         $sc3.Description = 'Uninstall RIP Demon'
         $sc3.Save()
     }
+
+    New-RipDemonDesktopShortcut -InstallRoot $InstallRoot | Out-Null
 
     Write-Host '  Start Menu shortcuts created.' -ForegroundColor Green
 }
@@ -979,7 +1074,9 @@ function Register-RipDemonUninstall {
     Set-ItemProperty -Path $key -Name 'URLInfoAbout' -Value 'https://opes.dev'
     Set-ItemProperty -Path $key -Name 'HelpLink' -Value 'https://opes.dev'
     Set-ItemProperty -Path $key -Name 'InstallLocation' -Value $InstallRoot
-    Set-ItemProperty -Path $key -Name 'DisplayIcon' -Value (Join-Path $InstallRoot 'tools\yt-dlp.exe')
+    $displayIcon = Get-RipDemonAppIconPath -InstallRoot $InstallRoot
+    if (-not $displayIcon) { $displayIcon = Join-Path $InstallRoot 'tools\yt-dlp.exe' }
+    Set-ItemProperty -Path $key -Name 'DisplayIcon' -Value $displayIcon
     Set-ItemProperty -Path $key -Name 'UninstallString' -Value $uninstallString
     Set-ItemProperty -Path $key -Name 'QuietUninstallString' -Value $quietString
     Set-ItemProperty -Path $key -Name 'NoModify' -Value 1 -Type DWord
@@ -1041,5 +1138,6 @@ function Remove-RipDemonStartMenu {
 
     Remove-Item -LiteralPath $programs -Recurse -Force
     Write-Host '  Start Menu shortcuts removed.' -ForegroundColor Yellow
+    Remove-RipDemonDesktopShortcut -InstallRoot $InstallRoot | Out-Null
     return $true
 }

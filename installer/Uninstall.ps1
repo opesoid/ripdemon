@@ -50,12 +50,20 @@ if (Test-Path -LiteralPath $toolsPs1) {
         }
         return $true
     }
+    function Remove-RipDemonDesktopShortcut {
+        param([string]$InstallRoot)
+        $desktopLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'RIP Demon.lnk'
+        if (Test-Path -LiteralPath $desktopLnk) {
+            Remove-Item -LiteralPath $desktopLnk -Force -ErrorAction SilentlyContinue
+        }
+    }
     function Remove-RipDemonStartMenu {
         param([string]$InstallRoot)
         $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\RIP Demon'
         if (Test-Path -LiteralPath $programs) {
             Remove-Item -LiteralPath $programs -Recurse -Force
         }
+        Remove-RipDemonDesktopShortcut -InstallRoot $InstallRoot
     }
     function Clear-RipDemonShellLeftovers {
         param([switch]$Quiet)
@@ -101,8 +109,11 @@ if (Get-Command Clear-RipDemonShellLeftovers -ErrorAction SilentlyContinue) {
     Clear-RipDemonShellLeftovers -Quiet | Out-Null
 }
 
-Write-Host '  Removing Start Menu shortcuts...' -ForegroundColor Cyan
+Write-Host '  Removing Start Menu / Desktop shortcuts...' -ForegroundColor Cyan
 Remove-RipDemonStartMenu -InstallRoot $InstallRoot | Out-Null
+if (Get-Command Remove-RipDemonDesktopShortcut -ErrorAction SilentlyContinue) {
+    Remove-RipDemonDesktopShortcut -InstallRoot $InstallRoot | Out-Null
+}
 
 Write-Host '  Unregistering Apps & features...' -ForegroundColor Cyan
 Unregister-RipDemonUninstall -InstallRoot $InstallRoot | Out-Null

@@ -78,7 +78,11 @@ Assert-True ($tools -match 'ffmpeg\.version') 'ffmpeg version marker present'
 Assert-True ($tools -match 'function Get-RipDemonOutputDirs') 'shared output dirs helper present'
 Assert-True ($tools -notmatch 'function Register-RipDemonShellIntegration') 'shell Register removed'
 Assert-True ($tools -match 'function Clear-RipDemonShellLeftovers') 'shell leftover cleanup present'
+Assert-True ($tools -match 'function New-RipDemonDesktopShortcut') 'desktop shortcut helper present'
+Assert-True ($tools -match 'function Get-RipDemonAppIconPath') 'app icon helper present'
 Assert-True ($tools -match 'function Invoke-RipDemonFirstRunWizard') 'first-run wizard present'
+Assert-True (Test-Path (Join-Path $ProjectRoot 'assets\icon.png')) 'assets/icon.png present'
+Assert-True (Test-Path (Join-Path $ProjectRoot 'assets\icon.ico')) 'assets/icon.ico present'
 Assert-True ($tools -match "Publisher' -Value 'Opes'") 'Apps & features publisher is Opes'
 Assert-True ($tools -match 'opes\.dev') 'branding URL opes.dev present'
 
@@ -111,6 +115,17 @@ $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw
 Assert-True ($yt -match 'RipDemon\.Cli\.ps1') 'yt.cmd forwards to RipDemon.Cli.ps1'
 Assert-True ($yt -match 'version') 'yt.cmd supports version'
 Assert-True ($yt -match 'Update\.ps1" %\*') 'yt update forwards args to Update.ps1'
+
+$gui = Get-Content (Join-Path $ProjectRoot 'src\gui\RipDemon.Gui.ps1') -Raw
+Assert-True ($gui -match "SelectedMode = 'mp3'") 'GUI defaults to MP3'
+Assert-True ($gui -match "SelectedMode = 'mp4'") 'GUI supports MP4 mode'
+Assert-True ($gui -match '--sponsorblock') 'GUI supports SponsorBlock'
+Assert-True ($gui -match '--subs') 'GUI supports subtitles'
+Assert-True ($gui -match '--thumbnail-only') 'GUI supports thumbnail-only'
+Assert-True ($gui -match '--quality') 'GUI supports MP4 quality'
+Assert-True ($gui -match '--cookies-from-browser') 'GUI supports cookies'
+Assert-True ($gui -match '--no-playlist') 'GUI supports no-playlist'
+Assert-True ($gui -match '--open') 'GUI supports open folder'
 
 $cli = Get-Content (Join-Path $ProjectRoot 'src\lib\RipDemon.Cli.ps1') -Raw
 Assert-True ($cli -match '--no-playlist') 'CLI supports --no-playlist'

@@ -26,6 +26,7 @@ $copyMap = @(
     @{ Src = 'README.md'; Dst = 'README.md' }
     @{ Src = 'LICENSE'; Dst = 'LICENSE' }
     @{ Src = 'CHANGELOG.md'; Dst = 'CHANGELOG.md' }
+    @{ Src = 'assets'; Dst = 'assets' }
     @{ Src = 'src'; Dst = 'src' }
     @{ Src = 'installer'; Dst = 'installer' }
     @{ Src = 'updater'; Dst = 'updater' }

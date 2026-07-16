@@ -152,7 +152,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\Install.ps1 -Ins
 2. Runs the first-run wizard and writes `config.ini`
 3. Downloads **yt-dlp**, **ffmpeg**, and **deno** into `tools\` (checksum verified)
 4. Adds `bin\` to your **User PATH**
-5. Creates Start Menu shortcuts (including the GUI)
+5. Creates Start Menu shortcuts and a **Desktop** shortcut for the GUI (custom icon)
 6. Registers an uninstaller in **Settings → Apps** (publisher: Opes)
 
 ---
@@ -306,13 +306,17 @@ yt gui
 
 Or **Start Menu → RIP Demon → RIP Demon**.
 
-The window supports:
+The download window includes:
 
 - Paste / clipboard URL
-- MP3 or MP4
-- MP4 quality preset
-- Optional cookies browser
-- No-playlist and open-folder toggles
+- **MP3** or **MP4** (large format buttons)
+- MP4 quality: 720 / 1080 / best
+- Cookies browser (chrome, edge, firefox, …)
+- No-playlist, open folder when done
+- Subtitles + language (MP4)
+- SponsorBlock remove (MP4)
+- Thumbnail-only mode
+- Quick links to your MP3 / MP4 folders
 
 It runs the same `yt` CLI under the hood.
 

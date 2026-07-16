@@ -23,7 +23,9 @@ First public release by [Opes](https://opes.dev).
 - `--open`, `--subs`, `--sponsorblock`, `--thumbnail-only`
 - Safe yt-dlp passthrough after `--`
 - `yt info`, `yt config`, `yt gui`, `yt update`, `yt version`, `yt uninstall`, `yt help`
-- Minimal WinForms GUI and Start Menu shortcuts
+- WinForms GUI with MP3/MP4, quality, cookies, subs, SponsorBlock, thumbnail-only, and folder shortcuts
+- Desktop + Start Menu shortcuts for the GUI using `assets/icon.ico`
+- Start Menu helper shortcuts (help, prompt, folders, uninstall)
 - Apps & features registration and quiet uninstall
 - Release zip packaging, `SHA256SUMS.txt`, and optional Inno Setup installer
 - Smoke and integration tests; GitHub Actions CI (smoke) + Release workflow on `v*` tags
