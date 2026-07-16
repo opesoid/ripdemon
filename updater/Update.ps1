@@ -36,9 +36,9 @@ Write-RipDemonBanner -Title 'RIP Demon Updater'
 $root = Get-RipDemonRoot -Override $InstallRoot
 $toolsDir = Join-Path $root 'tools'
 $versionFile = Join-Path $root 'version.txt'
-$appVersion = if (Test-Path $versionFile) { (Get-Content $versionFile -Raw).Trim() } else { 'unknown' }
+$appVersion = if (Test-Path -LiteralPath $versionFile) { (Get-Content -LiteralPath $versionFile -Raw).Trim() } else { 'unknown' }
 
-Write-Host "  RIP Demon: $appVersion (Opes - https://opes.dev)"
+Write-Host "  Installed: $appVersion (Opes - https://opes.dev)"
 Write-Host "  Tools:     $toolsDir"
 Write-Host ''
 
@@ -73,11 +73,16 @@ if (-not $AppOnly) {
     $result = Ensure-RipDemonTools -ToolsDir $toolsDir -ForceYtDlp:$Force -ForceFfmpeg:$Force -ForceDeno:$Force
 }
 
+# Re-read version after app update
+$appVersion = if (Test-Path -LiteralPath $versionFile) { (Get-Content -LiteralPath $versionFile -Raw).Trim() } else { $appVersion }
+
 Write-Host ''
 Write-Host '  Done.' -ForegroundColor Green
 Write-Host "  RIP Demon $appVersion"
 if ($appResult -and $appResult.Updated) {
     Write-Host '  (application package updated)' -ForegroundColor DarkGray
+} elseif ($appResult -and -not $appResult.Updated -and $appResult.Latest) {
+    Write-Host "  (latest on GitHub main: $($appResult.Latest))" -ForegroundColor DarkGray
 }
 if ($result) {
     if ($result.YtDlp.Version) {

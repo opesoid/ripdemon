@@ -753,6 +753,14 @@ function Update-RipDemonApp {
             -Label "Downloading RIP Demon from GitHub ($($latest.Branch))"
 
         $result = Install-RipDemonAppFromZip -ZipPath $zipPath -InstallRoot $InstallRoot
+        # Pin version.txt to the API VERSION (zipball can lag the commit tip briefly)
+        if ($latest.Version) {
+            Set-Content -Path (Join-Path $InstallRoot 'version.txt') -Value $latest.Version -NoNewline
+            $result = [pscustomobject]@{
+                Version = $latest.Version
+                BinDir  = $result.BinDir
+            }
+        }
         Set-InstalledRipDemonCommit -InstallRoot $InstallRoot -Commit $latest.Commit
         Register-RipDemonUninstall -InstallRoot $InstallRoot -Version $result.Version | Out-Null
         # Refresh GUI desktop / Start Menu icons after app files land
