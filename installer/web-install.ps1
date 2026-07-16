@@ -20,87 +20,97 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Get-RipDemonWebToolsScript {
+# irm|iex runs in the caller's session — Restricted policy blocks .ps1 on disk.
+# Process scope only affects this PowerShell process (no admin, no permanent change).
+try {
+    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction Stop
+} catch {
+    # Continue; helpers load via scriptblock and Install.ps1 is launched with -ExecutionPolicy Bypass.
+}
+
+function Import-RipDemonWebTools {
+    $content = $null
     if ($PSScriptRoot) {
         $local = Join-Path $PSScriptRoot '..\updater\RipDemon.Tools.ps1'
-        if (Test-Path -LiteralPath $local) { return (Resolve-Path -LiteralPath $local).Path }
-    }
-    $url = 'https://raw.githubusercontent.com/opesoid/ripdemon/main/updater/RipDemon.Tools.ps1'
-    $tmp = Join-Path $env:TEMP ("RipDemon.Tools.{0}.ps1" -f [guid]::NewGuid().ToString('N'))
-    $prev = $ProgressPreference
-    $ProgressPreference = 'SilentlyContinue'
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers @{
-            'User-Agent' = 'RIP-Demon'
-            'Accept'     = 'application/vnd.github.raw'
+        if (Test-Path -LiteralPath $local) {
+            $content = Get-Content -LiteralPath $local -Raw
         }
     }
-    finally {
-        $ProgressPreference = $prev
+    if (-not $content) {
+        $url = 'https://raw.githubusercontent.com/opesoid/ripdemon/main/updater/RipDemon.Tools.ps1'
+        $prev = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            $content = (Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{
+                    'User-Agent' = 'RIP-Demon'
+                    'Accept'     = 'application/vnd.github.raw'
+                }).Content
+        }
+        finally {
+            $ProgressPreference = $prev
+        }
     }
-    if (-not (Test-Path -LiteralPath $tmp) -or ((Get-Item -LiteralPath $tmp).Length -lt 100)) {
-        throw "Failed to download RipDemon.Tools.ps1 from $url"
+    if (-not $content -or $content.Length -lt 100) {
+        throw 'Failed to load RipDemon.Tools.ps1 helper script.'
     }
-    return $tmp
+    # Scriptblock avoids writing a temp .ps1 that Restricted policy would block.
+    . ([scriptblock]::Create($content))
 }
 
-$toolsPath = Get-RipDemonWebToolsScript
-$toolsIsTemp = $toolsPath -like (Join-Path $env:TEMP '*')
+Import-RipDemonWebTools
+
+Write-RipDemonBanner -Title 'RIP Demon Web Installer'
+
 try {
-    . $toolsPath
+    Assert-RipDemonWindowsX64
+} catch {
+    Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ''
+    exit 1
+}
 
-    Write-RipDemonBanner -Title 'RIP Demon Web Installer'
+Write-Host '  Fetching latest release from GitHub...' -ForegroundColor Cyan
+$latest = Get-RipDemonLatestRelease
+Write-Host "  Release:  $($latest.Tag) ($($latest.Name))" -ForegroundColor White
+Write-Host "  Target:   $InstallRoot"
+Write-Host ''
 
-    try {
-        Assert-RipDemonWindowsX64
-    } catch {
-        Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host ''
-        exit 1
+$workDir = Join-Path $env:TEMP ("ripdemon-webinstall-{0}" -f [guid]::NewGuid().ToString('N'))
+$zipPath = Join-Path $workDir $latest.Name
+$extractDir = Join-Path $workDir 'extract'
+
+try {
+    New-Item -ItemType Directory -Force -Path $workDir, $extractDir | Out-Null
+
+    $mb = if ($latest.Size) { '{0:N0} MB' -f ($latest.Size / 1MB) } else { $null }
+    Save-RipDemonFile -Uri $latest.Url -OutFile $zipPath `
+        -Label "Downloading $($latest.Name)" `
+        -ExpectedSize $mb -ExpectedSha256 $latest.Sha256 -ExpectedByteSize $latest.Size
+
+    Write-Host '  Extracting package...' -ForegroundColor Cyan
+    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+    $projectRoot = Resolve-RipDemonProjectRoot -ExtractDir $extractDir
+    $installPs1 = Join-Path $projectRoot 'installer\Install.ps1'
+    if (-not (Test-Path -LiteralPath $installPs1)) {
+        throw "Release package is missing installer\Install.ps1 under $projectRoot"
     }
 
-    Write-Host '  Fetching latest release from GitHub...' -ForegroundColor Cyan
-    $latest = Get-RipDemonLatestRelease
-    Write-Host "  Release:  $($latest.Tag) ($($latest.Name))" -ForegroundColor White
-    Write-Host "  Target:   $InstallRoot"
+    Write-Host '  Running installer...' -ForegroundColor Cyan
     Write-Host ''
 
-    $workDir = Join-Path $env:TEMP ("ripdemon-webinstall-{0}" -f [guid]::NewGuid().ToString('N'))
-    $zipPath = Join-Path $workDir $latest.Name
-    $extractDir = Join-Path $workDir 'extract'
+    # Child process with Bypass so Install.ps1 is not blocked by Restricted policy.
+    $psArgs = @(
+        '-NoProfile'
+        '-ExecutionPolicy', 'Bypass'
+        '-File', $installPs1
+        '-InstallRoot', $InstallRoot
+    )
+    if ($SkipWizard) { $psArgs += '-SkipWizard' }
+    if ($SkipTools) { $psArgs += '-SkipTools' }
 
-    try {
-        New-Item -ItemType Directory -Force -Path $workDir, $extractDir | Out-Null
-
-        $mb = if ($latest.Size) { '{0:N0} MB' -f ($latest.Size / 1MB) } else { $null }
-        Save-RipDemonFile -Uri $latest.Url -OutFile $zipPath `
-            -Label "Downloading $($latest.Name)" `
-            -ExpectedSize $mb -ExpectedSha256 $latest.Sha256 -ExpectedByteSize $latest.Size
-
-        Write-Host '  Extracting package...' -ForegroundColor Cyan
-        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-        $projectRoot = Resolve-RipDemonProjectRoot -ExtractDir $extractDir
-        $installPs1 = Join-Path $projectRoot 'installer\Install.ps1'
-        if (-not (Test-Path -LiteralPath $installPs1)) {
-            throw "Release package is missing installer\Install.ps1 under $projectRoot"
-        }
-
-        Write-Host '  Running installer...' -ForegroundColor Cyan
-        Write-Host ''
-        $installArgs = @{
-            InstallRoot = $InstallRoot
-            SkipWizard  = $SkipWizard
-            SkipTools   = $SkipTools
-        }
-        & $installPs1 @installArgs
-        exit $LASTEXITCODE
-    }
-    finally {
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $workDir
-    }
+    & powershell.exe @psArgs
+    exit $LASTEXITCODE
 }
 finally {
-    if ($toolsIsTemp) {
-        Remove-Item -Force -ErrorAction SilentlyContinue $toolsPath
-    }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $workDir
 }

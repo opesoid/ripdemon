@@ -82,6 +82,22 @@ irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-instal
 
 This downloads the **latest GitHub Release** zip, verifies **SHA256**, then runs the installer (wizard + tool downloads). Requires a published release on [opesoid/ripdemon](https://github.com/opesoid/ripdemon/releases).
 
+#### PowerShell script blocking
+
+Windows often blocks scripts by default (`running scripts is disabled on this system`). **Recommended:** allow signed/local scripts for your user account (no admin):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Then run the one-liner above in a **new** PowerShell window.
+
+If you prefer not to change policy, install with a one-time Bypass:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex"
+```
+
 Silent defaults (no wizard):
 
 ```powershell
@@ -491,6 +507,7 @@ rip-demon/
 | Want defaults without prompts | `Install.ps1 -SkipWizard` or web-install `-SkipWizard` |
 | GUI missing | Re-run the installer / `yt update -AppOnly` so `gui\RipDemon.Gui.ps1` is copied |
 | One-liner: no release yet | Publish a `vX.Y.Z` tag (see [Build & test](#build--test)); until then use `installer\Install.cmd` from a clone |
+| `running scripts is disabled` / execution policy | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry the one-liner. Or use the Bypass command under [PowerShell script blocking](#powershell-script-blocking) |
 | App update fails | Check internet / GitHub; try `yt update -SkipApp` for tools only |
 
 ---

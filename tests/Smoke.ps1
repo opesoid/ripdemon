@@ -96,6 +96,9 @@ Assert-True ($update -match 'AppOnly') 'Update.ps1 supports -AppOnly'
 $webInstall = Get-Content (Join-Path $ProjectRoot 'installer\web-install.ps1') -Raw
 Assert-True ($webInstall -match 'Get-RipDemonLatestRelease') 'web-install uses Get-RipDemonLatestRelease'
 Assert-True ($webInstall -match 'Install\.ps1') 'web-install invokes Install.ps1'
+Assert-True ($webInstall -match '\[scriptblock\]::Create') 'web-install loads helpers via scriptblock'
+Assert-True ($webInstall -match 'ExecutionPolicy.*Bypass') 'web-install uses ExecutionPolicy Bypass'
+Assert-True ($webInstall -notmatch 'OutFile \$tmp') 'web-install does not write temp Tools.ps1'
 
 $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw
 Assert-True ($yt -match 'RipDemon\.Cli\.ps1') 'yt.cmd forwards to RipDemon.Cli.ps1'
