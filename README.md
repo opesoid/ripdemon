@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/ripdemon.png" alt="RIP Demon" width="220">
+  <img src="assets/ripdemon.png" alt="RIP Demon" width="555">
 </p>
 
 # RIP Demon
