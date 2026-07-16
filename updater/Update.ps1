@@ -17,6 +17,14 @@ if ($SkipApp -and $AppOnly) {
     exit 1
 }
 
+# Guard: yt.cmd used to forward "update" via %* (cmd SHIFT does not change %*),
+# which bound InstallRoot="update". Ignore bare command words / relative junk.
+$defaultRoot = Join-Path $env:LOCALAPPDATA 'RIP-Demon'
+if (-not $InstallRoot -or $InstallRoot -match '^(update|uninstall|version|help|gui|config)$' -or
+    ($InstallRoot -notmatch '^[A-Za-z]:\\' -and $InstallRoot -notmatch '^\\\\' -and -not (Test-Path -LiteralPath $InstallRoot))) {
+    $InstallRoot = $defaultRoot
+}
+
 $toolsPs1 = Join-Path $PSScriptRoot 'RipDemon.Tools.ps1'
 if (-not (Test-Path $toolsPs1)) {
     $toolsPs1 = Join-Path $InstallRoot 'updater\RipDemon.Tools.ps1'
@@ -34,7 +42,7 @@ Write-Host "  RIP Demon: $appVersion (Opes - https://opes.dev)"
 Write-Host "  Tools:     $toolsDir"
 Write-Host ''
 
-if (-not (Test-Path $root)) {
+if (-not (Test-Path -LiteralPath $root)) {
     Write-Host "  RIP Demon is not installed at $root" -ForegroundColor Red
     Write-Host '  Install with:' -ForegroundColor Yellow
     Write-Host '    irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex' -ForegroundColor Yellow

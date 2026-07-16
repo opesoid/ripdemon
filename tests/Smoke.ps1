@@ -114,7 +114,8 @@ Assert-True ($webInstall -match 'Write-RipDemonBanner missing') 'web-install val
 $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw
 Assert-True ($yt -match 'RipDemon\.Cli\.ps1') 'yt.cmd forwards to RipDemon.Cli.ps1'
 Assert-True ($yt -match 'version') 'yt.cmd supports version'
-Assert-True ($yt -match 'Update\.ps1" %\*') 'yt update forwards args to Update.ps1'
+Assert-True ($yt -match 'Update\.ps1" %2 %3 %4') 'yt update forwards flags via %2+ (not %*)'
+Assert-True ($yt -notmatch 'Update\.ps1" %\*') 'yt update does not use broken %* after shift'
 
 $gui = Get-Content (Join-Path $ProjectRoot 'src\gui\RipDemon.Gui.ps1') -Raw
 Assert-True ($gui -match "SelectedMode = 'mp3'") 'GUI defaults to MP3'

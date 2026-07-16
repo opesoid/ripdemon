@@ -68,9 +68,9 @@ if exist "%RIPDEMON_TOOLS%\deno.exe" (
 exit /b 0
 
 :update
-REM Forward optional flags: -Force, -SkipApp, -AppOnly, -InstallRoot ...
-shift
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%RIPDEMON_UPDATER%\Update.ps1" %*
+REM Forward optional flags only (%2+). Do NOT use %* after shift — cmd's %* ignores SHIFT
+REM and would pass the literal "update" as -InstallRoot.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%RIPDEMON_UPDATER%\Update.ps1" %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :uninstall
