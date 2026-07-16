@@ -1,0 +1,6 @@
+dist/
+*.zip
+*.exe
+.DS_Store
+Thumbs.db
+tests/integration-last-run.log
