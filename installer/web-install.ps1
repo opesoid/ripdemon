@@ -8,9 +8,9 @@
 
     irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex
 
-  With flags (download first, then run):
+  With flags:
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\web-install.ps1 -SkipWizard
+    & ([scriptblock]::Create((irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1))) -SkipWizard
 #>
 param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'RIP-Demon'),
@@ -21,74 +21,74 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # irm|iex runs in the caller's session — Restricted policy blocks .ps1 on disk.
-# Process scope only affects this PowerShell process (no admin, no permanent change).
 try {
     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction Stop
-} catch {
-    # Continue; helpers load via scriptblock and Install.ps1 is launched with -ExecutionPolicy Bypass.
+} catch {}
+
+# --- Load RipDemon.Tools.ps1 into THIS scope (must not be inside a function; iex drops function-local defs) ---
+$RipDemonToolsText = $null
+if ($PSScriptRoot) {
+    $localTools = Join-Path $PSScriptRoot '..\updater\RipDemon.Tools.ps1'
+    if (Test-Path -LiteralPath $localTools) {
+        $RipDemonToolsText = Get-Content -LiteralPath $localTools -Raw
+    }
 }
 
-function Get-RipDemonRemoteText {
-    param([Parameter(Mandatory)][string[]]$Urls)
-    $prev = $ProgressPreference
+if (-not $RipDemonToolsText) {
+    $toolUrls = @(
+        'https://api.github.com/repos/opesoid/ripdemon/contents/updater/RipDemon.Tools.ps1?ref=main'
+        'https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/updater/RipDemon.Tools.ps1'
+        'https://raw.githubusercontent.com/opesoid/ripdemon/main/updater/RipDemon.Tools.ps1'
+    )
+    $prevProgress = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'
     try {
-        foreach ($url in $Urls) {
+        foreach ($toolUrl in $toolUrls) {
             try {
-                if ($url -match 'api\.github\.com/.+/contents/') {
-                    $resp = Invoke-RestMethod -Uri $url -Headers @{
+                if ($toolUrl -match 'api\.github\.com/.+/contents/') {
+                    $apiResp = Invoke-RestMethod -Uri $toolUrl -Headers @{
                         'User-Agent' = 'RIP-Demon'
                         'Accept'     = 'application/vnd.github+json'
                     }
-                    if ($resp.content) {
-                        $b64 = ($resp.content -replace '\s', '')
-                        $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
-                        if ($text -and $text.Length -gt 100) { return $text }
+                    if ($apiResp.content) {
+                        $b64 = ($apiResp.content -replace '\s', '')
+                        $RipDemonToolsText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
                     }
                 }
                 else {
-                    $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{
-                        'User-Agent' = 'RIP-Demon'
+                    $webResp = Invoke-WebRequest -Uri $toolUrl -UseBasicParsing -Headers @{
+                        'User-Agent'    = 'RIP-Demon'
                         'Cache-Control' = 'no-cache'
                     }
-                    $text = if ($resp.Content -is [byte[]]) {
-                        [Text.Encoding]::UTF8.GetString($resp.Content)
+                    $RipDemonToolsText = if ($webResp.Content -is [byte[]]) {
+                        [Text.Encoding]::UTF8.GetString($webResp.Content)
                     } else {
-                        [string]$resp.Content
+                        [string]$webResp.Content
                     }
-                    if ($text -and $text.Length -gt 100) { return $text }
                 }
+                if ($RipDemonToolsText -and $RipDemonToolsText.Length -gt 100 -and ($RipDemonToolsText -match 'function Write-RipDemonBanner')) {
+                    break
+                }
+                $RipDemonToolsText = $null
             } catch {
-                # try next URL
+                $RipDemonToolsText = $null
             }
         }
     }
     finally {
-        $ProgressPreference = $prev
+        $ProgressPreference = $prevProgress
     }
-    throw 'Failed to download RipDemon.Tools.ps1 helper script.'
 }
 
-function Import-RipDemonWebTools {
-    $content = $null
-    if ($PSScriptRoot) {
-        $local = Join-Path $PSScriptRoot '..\updater\RipDemon.Tools.ps1'
-        if (Test-Path -LiteralPath $local) {
-            $content = Get-Content -LiteralPath $local -Raw
-        }
-    }
-    if (-not $content) {
-        # Prefer GitHub API / jsDelivr — raw.githubusercontent.com/main is often CDN-stale after pushes.
-        $content = Get-RipDemonRemoteText -Urls @(
-            'https://api.github.com/repos/opesoid/ripdemon/contents/updater/RipDemon.Tools.ps1?ref=main'
-            'https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/updater/RipDemon.Tools.ps1'
-            'https://raw.githubusercontent.com/opesoid/ripdemon/main/updater/RipDemon.Tools.ps1'
-        )
-    }
-    . ([scriptblock]::Create($content))
+if (-not $RipDemonToolsText -or ($RipDemonToolsText -notmatch 'function Write-RipDemonBanner')) {
+    throw 'Failed to load RipDemon.Tools.ps1 helpers (Write-RipDemonBanner missing).'
 }
 
-Import-RipDemonWebTools
+. ([scriptblock]::Create($RipDemonToolsText))
+
+if (-not (Get-Command Write-RipDemonBanner -ErrorAction SilentlyContinue)) {
+    throw 'RipDemon helpers loaded but Write-RipDemonBanner is still unavailable.'
+}
 
 Write-RipDemonBanner -Title 'RIP Demon Web Installer'
 
@@ -128,7 +128,6 @@ try {
     Write-Host '  Running installer...' -ForegroundColor Cyan
     Write-Host ''
 
-    # Child process with Bypass so Install.ps1 is not blocked by Restricted policy.
     $psArgs = @(
         '-NoProfile'
         '-ExecutionPolicy', 'Bypass'
@@ -140,7 +139,7 @@ try {
 
     & powershell.exe @psArgs
     $code = $LASTEXITCODE
-    if ($code -eq 0 -or $null -eq $code) {
+    if (($code -eq 0 -or $null -eq $code) -and (Test-Path -LiteralPath $InstallRoot)) {
         Set-InstalledRipDemonCommit -InstallRoot $InstallRoot -Commit $source.Commit
     }
     exit $code

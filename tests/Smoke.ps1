@@ -104,6 +104,8 @@ Assert-True ($webInstall -match 'ExecutionPolicy.*Bypass') 'web-install uses Exe
 Assert-True ($webInstall -match 'api\.github\.com/repos/opesoid/ripdemon/contents') 'web-install prefers GitHub API for helpers'
 Assert-True ($webInstall -match 'cdn\.jsdelivr\.net') 'web-install has jsDelivr fallback'
 Assert-True ($webInstall -notmatch 'OutFile \$tmp') 'web-install does not write temp Tools.ps1'
+Assert-True ($webInstall -notmatch 'function Import-RipDemonWebTools') 'web-install does not nest helper import in a function'
+Assert-True ($webInstall -match 'Write-RipDemonBanner missing') 'web-install validates helpers loaded'
 
 $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw
 Assert-True ($yt -match 'RipDemon\.Cli\.ps1') 'yt.cmd forwards to RipDemon.Cli.ps1'
