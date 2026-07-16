@@ -77,10 +77,12 @@ Windows tool for downloading audio and video with short `yt` commands. Built on 
 In **PowerShell** (Windows 10+):
 
 ```powershell
-irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
+irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex
 ```
 
 This downloads the current [**main**](https://github.com/opesoid/ripdemon) branch from GitHub, then runs the installer (wizard + tool downloads). No GitHub Release or tag is required — push to `main` and users get it.
+
+Uses [jsDelivr](https://www.jsdelivr.com/) so you are not stuck on a stale `raw.githubusercontent.com` CDN cache after a push.
 
 #### PowerShell script blocking
 
@@ -95,13 +97,13 @@ Then run the one-liner above in a **new** PowerShell window.
 If you prefer not to change policy, install with a one-time Bypass:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex"
 ```
 
 Silent defaults (no wizard):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1))) -SkipWizard
+& ([scriptblock]::Create((irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1))) -SkipWizard
 ```
 
 ### From a release zip
@@ -504,7 +506,7 @@ rip-demon/
 | ARM64 / non-x64 PC | Not supported — tools are x64-only |
 | Want defaults without prompts | `Install.ps1 -SkipWizard` or web-install `-SkipWizard` |
 | GUI missing | Re-run the installer / `yt update -AppOnly` so `gui\RipDemon.Gui.ps1` is copied |
-| One-liner fails to download | Check internet / GitHub access to `opesoid/ripdemon`; confirm `main` has `installer\web-install.ps1` |
+| One-liner fails / still says “No GitHub release” | Use the **jsDelivr** one-liner above (not `raw.githubusercontent.com` — that CDN can lag). Or install from this repo with `installer\Install.cmd` |
 | `running scripts is disabled` / execution policy | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry the one-liner. Or use the Bypass command under [PowerShell script blocking](#powershell-script-blocking) |
 | App update fails | Check internet / GitHub; try `yt update -SkipApp` for tools only |
 

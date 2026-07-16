@@ -462,6 +462,28 @@ function Ensure-RipDemonTools {
 $script:RipDemonGitHubRepo = 'opesoid/ripdemon'
 $script:RipDemonGitHubBranch = 'main'
 
+function Get-RipDemonGitHubFileContent {
+    <#
+    .SYNOPSIS
+      Read a text file from the repo via GitHub Contents API (avoids stale raw.githubusercontent.com CDN cache).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$Ref = $script:RipDemonGitHubBranch
+    )
+    $uri = "https://api.github.com/repos/$script:RipDemonGitHubRepo/contents/$($Path.TrimStart('/').Replace('\','/'))?ref=$Ref"
+    try {
+        $resp = Invoke-RestMethod -Uri $uri -Headers (Get-RipDemonGitHubHeaders)
+    } catch {
+        throw "Failed to read $Path from $script:RipDemonGitHubRepo@$Ref`: $($_.Exception.Message)"
+    }
+    if (-not $resp.content) {
+        throw "Empty content for $Path from $script:RipDemonGitHubRepo@$Ref"
+    }
+    $b64 = ($resp.content -replace '\s', '')
+    return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
+}
+
 function Normalize-RipDemonVersion {
     param([string]$Version)
     if (-not $Version) { return $null }
@@ -504,17 +526,7 @@ function Get-RipDemonRepoSource {
     $branch = $script:RipDemonGitHubBranch
     $headers = Get-RipDemonGitHubHeaders
 
-    $versionUrl = "https://raw.githubusercontent.com/$repo/$branch/VERSION"
-    $prev = $ProgressPreference
-    $ProgressPreference = 'SilentlyContinue'
-    try {
-        $versionRaw = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers $headers).Content
-    } catch {
-        throw "Failed to read VERSION from $repo@$branch`: $($_.Exception.Message)"
-    } finally {
-        $ProgressPreference = $prev
-    }
-
+    $versionRaw = Get-RipDemonGitHubFileContent -Path 'VERSION' -Ref $branch
     $version = Normalize-RipDemonVersion $versionRaw
     if (-not $version) {
         throw "Could not parse VERSION from $repo@$branch."

@@ -60,7 +60,7 @@ jobs:
             ### Install (one line — always uses main)
 
             ```powershell
-            irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
+            irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex
             ```
 
             Or download this release zip, unzip, and run `Install.cmd`. Verify against `SHA256SUMS.txt`.

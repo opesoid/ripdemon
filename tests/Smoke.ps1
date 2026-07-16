@@ -64,6 +64,7 @@ Assert-True ($iss -notmatch 'Update-AppFromGitHub|OWNER/RIP-Demon') 'Inno script
 Assert-True ($iss -notmatch '\[Icons\]') 'Inno does not duplicate Start Menu [Icons]'
 
 $tools = Get-Content (Join-Path $ProjectRoot 'updater\RipDemon.Tools.ps1') -Raw
+Assert-True ($tools -match 'function Get-RipDemonGitHubFileContent') 'Get-RipDemonGitHubFileContent present'
 Assert-True ($tools -match 'function Get-RipDemonRepoSource') 'Get-RipDemonRepoSource present'
 Assert-True ($tools -match 'function Compare-RipDemonVersion') 'Compare-RipDemonVersion present'
 Assert-True ($tools -match 'function Copy-RipDemonAppFiles') 'Copy-RipDemonAppFiles present'
@@ -85,7 +86,7 @@ $readme = Get-Content (Join-Path $ProjectRoot 'README.md') -Raw
 Assert-True ($readme -match 'opes\.dev') 'README mentions opes.dev'
 Assert-True ($readme -match 'Version 1\.0\.0|currently \*\*1\.0\.0\*\*|Version \| \*\*1\.0\.0\*\*') 'README documents 1.0.0'
 Assert-True ($readme -match 'web-install\.ps1') 'README documents web-install'
-Assert-True ($readme -match 'irm https://raw\.githubusercontent\.com/opesoid/ripdemon') 'README has one-liner install'
+Assert-True ($readme -match 'cdn\.jsdelivr\.net/gh/opesoid/ripdemon@main/installer/web-install\.ps1') 'README has jsDelivr one-liner install'
 
 $license = Get-Content (Join-Path $ProjectRoot 'LICENSE') -Raw
 Assert-True ($license -match 'Opes') 'LICENSE copyright is Opes'
@@ -100,6 +101,8 @@ Assert-True ($webInstall -match 'Get-RipDemonRepoSource') 'web-install uses Get-
 Assert-True ($webInstall -match 'Install\.ps1') 'web-install invokes Install.ps1'
 Assert-True ($webInstall -match '\[scriptblock\]::Create') 'web-install loads helpers via scriptblock'
 Assert-True ($webInstall -match 'ExecutionPolicy.*Bypass') 'web-install uses ExecutionPolicy Bypass'
+Assert-True ($webInstall -match 'api\.github\.com/repos/opesoid/ripdemon/contents') 'web-install prefers GitHub API for helpers'
+Assert-True ($webInstall -match 'cdn\.jsdelivr\.net') 'web-install has jsDelivr fallback'
 Assert-True ($webInstall -notmatch 'OutFile \$tmp') 'web-install does not write temp Tools.ps1'
 
 $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw

@@ -37,7 +37,7 @@ Write-Host ''
 if (-not (Test-Path $root)) {
     Write-Host "  RIP Demon is not installed at $root" -ForegroundColor Red
     Write-Host '  Install with:' -ForegroundColor Yellow
-    Write-Host '    irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex' -ForegroundColor Yellow
+    Write-Host '    irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex' -ForegroundColor Yellow
     exit 1
 }
 

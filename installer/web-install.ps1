@@ -4,9 +4,9 @@
   One-line installer: download RIP Demon from GitHub main and run Install.ps1.
 
 .DESCRIPTION
-  Recommended:
+  Recommended (jsDelivr — avoids stale GitHub raw CDN cache):
 
-    irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
+    irm https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/installer/web-install.ps1 | iex
 
   With flags (download first, then run):
 
@@ -28,6 +28,47 @@ try {
     # Continue; helpers load via scriptblock and Install.ps1 is launched with -ExecutionPolicy Bypass.
 }
 
+function Get-RipDemonRemoteText {
+    param([Parameter(Mandatory)][string[]]$Urls)
+    $prev = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        foreach ($url in $Urls) {
+            try {
+                if ($url -match 'api\.github\.com/.+/contents/') {
+                    $resp = Invoke-RestMethod -Uri $url -Headers @{
+                        'User-Agent' = 'RIP-Demon'
+                        'Accept'     = 'application/vnd.github+json'
+                    }
+                    if ($resp.content) {
+                        $b64 = ($resp.content -replace '\s', '')
+                        $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
+                        if ($text -and $text.Length -gt 100) { return $text }
+                    }
+                }
+                else {
+                    $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{
+                        'User-Agent' = 'RIP-Demon'
+                        'Cache-Control' = 'no-cache'
+                    }
+                    $text = if ($resp.Content -is [byte[]]) {
+                        [Text.Encoding]::UTF8.GetString($resp.Content)
+                    } else {
+                        [string]$resp.Content
+                    }
+                    if ($text -and $text.Length -gt 100) { return $text }
+                }
+            } catch {
+                # try next URL
+            }
+        }
+    }
+    finally {
+        $ProgressPreference = $prev
+    }
+    throw 'Failed to download RipDemon.Tools.ps1 helper script.'
+}
+
 function Import-RipDemonWebTools {
     $content = $null
     if ($PSScriptRoot) {
@@ -37,23 +78,13 @@ function Import-RipDemonWebTools {
         }
     }
     if (-not $content) {
-        $url = 'https://raw.githubusercontent.com/opesoid/ripdemon/main/updater/RipDemon.Tools.ps1'
-        $prev = $ProgressPreference
-        $ProgressPreference = 'SilentlyContinue'
-        try {
-            $content = (Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{
-                    'User-Agent' = 'RIP-Demon'
-                    'Accept'     = 'application/vnd.github.raw'
-                }).Content
-        }
-        finally {
-            $ProgressPreference = $prev
-        }
+        # Prefer GitHub API / jsDelivr — raw.githubusercontent.com/main is often CDN-stale after pushes.
+        $content = Get-RipDemonRemoteText -Urls @(
+            'https://api.github.com/repos/opesoid/ripdemon/contents/updater/RipDemon.Tools.ps1?ref=main'
+            'https://cdn.jsdelivr.net/gh/opesoid/ripdemon@main/updater/RipDemon.Tools.ps1'
+            'https://raw.githubusercontent.com/opesoid/ripdemon/main/updater/RipDemon.Tools.ps1'
+        )
     }
-    if (-not $content -or $content.Length -lt 100) {
-        throw 'Failed to load RipDemon.Tools.ps1 helper script.'
-    }
-    # Scriptblock avoids writing a temp .ps1 that Restricted policy would block.
     . ([scriptblock]::Create($content))
 }
 
