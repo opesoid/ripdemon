@@ -15,8 +15,8 @@ First public release by [Opes](https://opes.dev).
 - Per-user install under `%LOCALAPPDATA%\RIP-Demon\` (no admin)
 - User `config.ini` for output folders, quality, cookies, open-after
 - First-run installer wizard (`-SkipWizard` for defaults)
-- **One-line web install** via `installer/web-install.ps1` (`irm … \| iex`) from the latest GitHub Release
-- **App self-update** — `yt update` upgrades RIP Demon (release zip + SHA256) then tools; flags `-SkipApp` / `-AppOnly` / `-Force`
+- **One-line web install** via `installer/web-install.ps1` (`irm … \| iex`) from the GitHub **main** branch (no Release required)
+- **App self-update** — `yt update` upgrades RIP Demon from **main** (VERSION + commit), then tools; flags `-SkipApp` / `-AppOnly` / `-Force`
 - Clipboard download when the URL is omitted
 - Batch downloads from multiple URLs, `.txt` / `.list` files, or `.url` shortcuts
 - Quality presets: `--quality 720|1080|best` and `--720` / `--1080` / `--best`

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  One-line installer: download the latest RIP Demon release and run Install.ps1.
+  One-line installer: download RIP Demon from GitHub main and run Install.ps1.
 
 .DESCRIPTION
   Recommended:
@@ -69,30 +69,29 @@ try {
     exit 1
 }
 
-Write-Host '  Fetching latest release from GitHub...' -ForegroundColor Cyan
-$latest = Get-RipDemonLatestRelease
-Write-Host "  Release:  $($latest.Tag) ($($latest.Name))" -ForegroundColor White
+Write-Host '  Fetching latest sources from GitHub (main)...' -ForegroundColor Cyan
+$source = Get-RipDemonRepoSource
+$commitLabel = if ($source.Commit) { $source.Commit.Substring(0, 7) } else { 'main' }
+Write-Host "  Source:   $($source.Branch) @ $commitLabel (v$($source.Version))" -ForegroundColor White
 Write-Host "  Target:   $InstallRoot"
 Write-Host ''
 
 $workDir = Join-Path $env:TEMP ("ripdemon-webinstall-{0}" -f [guid]::NewGuid().ToString('N'))
-$zipPath = Join-Path $workDir $latest.Name
+$zipPath = Join-Path $workDir $source.Name
 $extractDir = Join-Path $workDir 'extract'
 
 try {
     New-Item -ItemType Directory -Force -Path $workDir, $extractDir | Out-Null
 
-    $mb = if ($latest.Size) { '{0:N0} MB' -f ($latest.Size / 1MB) } else { $null }
-    Save-RipDemonFile -Uri $latest.Url -OutFile $zipPath `
-        -Label "Downloading $($latest.Name)" `
-        -ExpectedSize $mb -ExpectedSha256 $latest.Sha256 -ExpectedByteSize $latest.Size
+    Save-RipDemonFile -Uri $source.Url -OutFile $zipPath `
+        -Label "Downloading RIP Demon from GitHub ($($source.Branch))"
 
     Write-Host '  Extracting package...' -ForegroundColor Cyan
     Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
     $projectRoot = Resolve-RipDemonProjectRoot -ExtractDir $extractDir
     $installPs1 = Join-Path $projectRoot 'installer\Install.ps1'
     if (-not (Test-Path -LiteralPath $installPs1)) {
-        throw "Release package is missing installer\Install.ps1 under $projectRoot"
+        throw "Downloaded repo is missing installer\Install.ps1 under $projectRoot"
     }
 
     Write-Host '  Running installer...' -ForegroundColor Cyan
@@ -109,7 +108,11 @@ try {
     if ($SkipTools) { $psArgs += '-SkipTools' }
 
     & powershell.exe @psArgs
-    exit $LASTEXITCODE
+    $code = $LASTEXITCODE
+    if ($code -eq 0 -or $null -eq $code) {
+        Set-InstalledRipDemonCommit -InstallRoot $InstallRoot -Commit $source.Commit
+    }
+    exit $code
 }
 finally {
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $workDir

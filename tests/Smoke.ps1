@@ -64,12 +64,14 @@ Assert-True ($iss -notmatch 'Update-AppFromGitHub|OWNER/RIP-Demon') 'Inno script
 Assert-True ($iss -notmatch '\[Icons\]') 'Inno does not duplicate Start Menu [Icons]'
 
 $tools = Get-Content (Join-Path $ProjectRoot 'updater\RipDemon.Tools.ps1') -Raw
-Assert-True ($tools -match 'function Get-RipDemonLatestRelease') 'Get-RipDemonLatestRelease present'
+Assert-True ($tools -match 'function Get-RipDemonRepoSource') 'Get-RipDemonRepoSource present'
 Assert-True ($tools -match 'function Compare-RipDemonVersion') 'Compare-RipDemonVersion present'
 Assert-True ($tools -match 'function Copy-RipDemonAppFiles') 'Copy-RipDemonAppFiles present'
 Assert-True ($tools -match 'function Install-RipDemonAppFromZip') 'Install-RipDemonAppFromZip present'
 Assert-True ($tools -match 'function Update-RipDemonApp') 'Update-RipDemonApp present'
 Assert-True ($tools -match 'opesoid/ripdemon') 'GitHub repo id present'
+Assert-True ($tools -match 'archive/refs/heads/') 'repo zipball URL present'
+Assert-True ($tools -notmatch 'function Get-RipDemonLatestRelease') 'release-based app fetch removed'
 Assert-True ($tools -match 'Assert-RipDemonFileSha256') 'SHA256 verification present'
 Assert-True ($tools -match 'ffmpeg\.version') 'ffmpeg version marker present'
 Assert-True ($tools -match 'function Get-RipDemonOutputDirs') 'shared output dirs helper present'
@@ -94,7 +96,7 @@ Assert-True ($update -match 'SkipApp') 'Update.ps1 supports -SkipApp'
 Assert-True ($update -match 'AppOnly') 'Update.ps1 supports -AppOnly'
 
 $webInstall = Get-Content (Join-Path $ProjectRoot 'installer\web-install.ps1') -Raw
-Assert-True ($webInstall -match 'Get-RipDemonLatestRelease') 'web-install uses Get-RipDemonLatestRelease'
+Assert-True ($webInstall -match 'Get-RipDemonRepoSource') 'web-install uses Get-RipDemonRepoSource'
 Assert-True ($webInstall -match 'Install\.ps1') 'web-install invokes Install.ps1'
 Assert-True ($webInstall -match '\[scriptblock\]::Create') 'web-install loads helpers via scriptblock'
 Assert-True ($webInstall -match 'ExecutionPolicy.*Bypass') 'web-install uses ExecutionPolicy Bypass'

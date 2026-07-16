@@ -57,15 +57,13 @@ jobs:
           body: |
             ## RIP Demon ${{ steps.meta.outputs.version }}
 
-            ### Install (one line)
+            ### Install (one line — always uses main)
 
             ```powershell
             irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
             ```
 
-            Or download `RIP-Demon-${{ steps.meta.outputs.version }}-windows.zip`, unzip, and run `Install.cmd`.
-
-            Verify downloads against `SHA256SUMS.txt`.
+            Or download this release zip, unzip, and run `Install.cmd`. Verify against `SHA256SUMS.txt`.
 
             ### Update
 

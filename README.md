@@ -53,8 +53,8 @@ Windows tool for downloading audio and video with short `yt` commands. Built on 
 - **Extras** — subtitles, SponsorBlock removal, thumbnail-only, yt-dlp passthrough (`--`)
 - **Config file** + first-run installer wizard
 - **Minimal GUI** (`yt gui` / Start Menu)
-- **One-line install** — `irm ... | iex` from GitHub (release zip, SHA256 verified)
-- **Self-update** — `yt update` upgrades RIP Demon and yt-dlp / ffmpeg / deno
+- **One-line install** — `irm ... | iex` pulls the latest **main** branch from GitHub (no release required)
+- **Self-update** — `yt update` upgrades RIP Demon from **main**, then yt-dlp / ffmpeg / deno
 - **Tool updates** — yt-dlp, ffmpeg, deno from official releases (SHA256 verified)
 - **Clean lifecycle** — Apps & features, Start Menu, quiet uninstall; media files kept
 
@@ -80,7 +80,7 @@ In **PowerShell** (Windows 10+):
 irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
 ```
 
-This downloads the **latest GitHub Release** zip, verifies **SHA256**, then runs the installer (wizard + tool downloads). Requires a published release on [opesoid/ripdemon](https://github.com/opesoid/ripdemon/releases).
+This downloads the current [**main**](https://github.com/opesoid/ripdemon) branch from GitHub, then runs the installer (wizard + tool downloads). No GitHub Release or tag is required — push to `main` and users get it.
 
 #### PowerShell script blocking
 
@@ -346,7 +346,7 @@ Or double-click `%LOCALAPPDATA%\RIP-Demon\Update.cmd`.
 
 This:
 
-1. Checks [GitHub Releases](https://github.com/opesoid/ripdemon/releases) for a newer RIP Demon zip (SHA256 verified) and replaces app files — **`config.ini` and `tools\` are kept**
+1. Checks the [GitHub `main` branch](https://github.com/opesoid/ripdemon) for newer RIP Demon sources (by `VERSION` + commit) and replaces app files — **`config.ini` and `tools\` are kept**
 2. Updates **yt-dlp**, **ffmpeg**, and **deno** from their upstream releases (size + SHA256 checked)
 
 | Flag | Meaning |
@@ -422,14 +422,12 @@ powershell -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
 Output:
 
 - `dist\RIP-Demon-1.0.0-windows.zip` — always
-- `dist\SHA256SUMS.txt` — checksums for web install / self-update
+- `dist\SHA256SUMS.txt` — checksums for the packaged zip
 - `dist\RIP-Demon-Setup-1.0.0.exe` — if [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed
 
 The zip includes a root `Install.cmd`. Tools are downloaded at install time (not shipped inside the zip).
 
-### Publish a GitHub Release
-
-Tag a version that matches [`VERSION`](VERSION) (e.g. `v1.0.0`). The [Release](.github/workflows/release.yml) workflow builds the zip, writes `SHA256SUMS.txt`, and uploads them to the release. That unlocks the one-line installer and `yt update` self-update.
+One-line install and `yt update` use the live **`main`** branch — you do **not** need to publish a GitHub Release for users to install or update. Optional: tag `v*` to run [release.yml](.github/workflows/release.yml) and attach a packaged zip.
 
 ### Smoke tests
 
@@ -506,7 +504,7 @@ rip-demon/
 | ARM64 / non-x64 PC | Not supported — tools are x64-only |
 | Want defaults without prompts | `Install.ps1 -SkipWizard` or web-install `-SkipWizard` |
 | GUI missing | Re-run the installer / `yt update -AppOnly` so `gui\RipDemon.Gui.ps1` is copied |
-| One-liner: no release yet | Publish a `vX.Y.Z` tag (see [Build & test](#build--test)); until then use `installer\Install.cmd` from a clone |
+| One-liner fails to download | Check internet / GitHub access to `opesoid/ripdemon`; confirm `main` has `installer\web-install.ps1` |
 | `running scripts is disabled` / execution policy | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then retry the one-liner. Or use the Bypass command under [PowerShell script blocking](#powershell-script-blocking) |
 | App update fails | Check internet / GitHub; try `yt update -SkipApp` for tools only |
 

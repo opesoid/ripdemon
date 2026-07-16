@@ -457,9 +457,10 @@ function Ensure-RipDemonTools {
     return [pscustomobject]@{ YtDlp = $yt; Ffmpeg = $ff; Deno = $deno }
 }
 
-# --- RIP Demon app releases (opesoid/ripdemon) ---
+# --- RIP Demon app source (opesoid/ripdemon main branch) ---
 
 $script:RipDemonGitHubRepo = 'opesoid/ripdemon'
+$script:RipDemonGitHubBranch = 'main'
 
 function Normalize-RipDemonVersion {
     param([string]$Version)
@@ -494,64 +495,71 @@ function Compare-RipDemonVersion {
     return 0
 }
 
-function Get-RipDemonLatestRelease {
+function Get-RipDemonRepoSource {
     <#
     .SYNOPSIS
-      Latest GitHub release zip + SHA256 for RIP Demon itself.
+      Latest RIP Demon sources from the GitHub main branch (no Releases required).
     #>
-    $api = "https://api.github.com/repos/$script:RipDemonGitHubRepo/releases/latest"
+    $repo = $script:RipDemonGitHubRepo
+    $branch = $script:RipDemonGitHubBranch
+    $headers = Get-RipDemonGitHubHeaders
+
+    $versionUrl = "https://raw.githubusercontent.com/$repo/$branch/VERSION"
+    $prev = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
     try {
-        $release = Invoke-RestMethod -Uri $api -Headers (Get-RipDemonGitHubHeaders)
+        $versionRaw = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -Headers $headers).Content
     } catch {
-        $msg = $_.Exception.Message
-        if ($msg -match '404|Not Found') {
-            throw "No GitHub release yet for $script:RipDemonGitHubRepo. Publish a release (tag vX.Y.Z) before using web install / self-update."
-        }
-        throw "Failed to query GitHub releases for $script:RipDemonGitHubRepo`: $msg"
+        throw "Failed to read VERSION from $repo@$branch`: $($_.Exception.Message)"
+    } finally {
+        $ProgressPreference = $prev
     }
 
-    if (-not $release -or -not $release.assets -or $release.assets.Count -eq 0) {
-        throw "No GitHub release assets for $script:RipDemonGitHubRepo. Publish RIP-Demon-*-windows.zip + SHA256SUMS.txt."
-    }
-
-    $zipAsset = $release.assets | Where-Object {
-        $_.name -match '^RIP-Demon-.+-windows\.zip$'
-    } | Select-Object -First 1
-    if (-not $zipAsset) {
-        throw 'Latest release has no RIP-Demon-*-windows.zip asset.'
-    }
-
-    $sha = Get-AssetDigestSha256 -Asset $zipAsset
-    if (-not $sha) {
-        $sumsAsset = $release.assets | Where-Object {
-            $_.name -ieq 'SHA256SUMS.txt' -or $_.name -ieq 'SHA256SUMS'
-        } | Select-Object -First 1
-        if ($sumsAsset) {
-            $sha = Get-Sha256FromSumFile -SumFileUri $sumsAsset.browser_download_url -FileName $zipAsset.name
-        }
-    }
-    if (-not $sha) {
-        throw "Could not obtain SHA256 for $($zipAsset.name) (missing digest / SHA256SUMS.txt)."
-    }
-
-    $version = Normalize-RipDemonVersion $release.tag_name
-    if (-not $version) { $version = Normalize-RipDemonVersion $release.name }
+    $version = Normalize-RipDemonVersion $versionRaw
     if (-not $version) {
-        if ($zipAsset.name -match 'RIP-Demon-(\d+\.\d+\.\d+)-windows\.zip') {
-            $version = $Matches[1]
+        throw "Could not parse VERSION from $repo@$branch."
+    }
+
+    $commit = $null
+    try {
+        $commitApi = "https://api.github.com/repos/$repo/commits/$branch"
+        $commitInfo = Invoke-RestMethod -Uri $commitApi -Headers $headers
+        if ($commitInfo.sha) {
+            $commit = $commitInfo.sha.ToString().ToLowerInvariant()
         }
+    } catch {
+        Write-Host "  Warning: could not resolve $branch commit SHA ($($_.Exception.Message))." -ForegroundColor DarkYellow
     }
-    if (-not $version) {
-        throw "Could not determine version from release tag '$($release.tag_name)'."
-    }
+
+    $zipName = "ripdemon-$branch.zip"
+    $zipUrl = "https://github.com/$repo/archive/refs/heads/$branch.zip"
 
     [pscustomobject]@{
-        Tag     = $release.tag_name
+        Branch  = $branch
         Version = $version
-        Url     = $zipAsset.browser_download_url
-        Name    = $zipAsset.name
-        Size    = [long]$zipAsset.size
-        Sha256  = $sha
+        Commit  = $commit
+        Url     = $zipUrl
+        Name    = $zipName
+    }
+}
+
+function Get-InstalledRipDemonCommit {
+    param([Parameter(Mandatory)][string]$InstallRoot)
+    $marker = Join-Path $InstallRoot 'source.commit'
+    if (Test-Path -LiteralPath $marker) {
+        return (Get-Content -LiteralPath $marker -Raw).Trim().ToLowerInvariant()
+    }
+    return $null
+}
+
+function Set-InstalledRipDemonCommit {
+    param(
+        [Parameter(Mandatory)][string]$InstallRoot,
+        [string]$Commit
+    )
+    $marker = Join-Path $InstallRoot 'source.commit'
+    if ($Commit) {
+        Set-Content -Path $marker -Value $Commit -NoNewline
     }
 }
 
@@ -668,7 +676,7 @@ function Install-RipDemonAppFromZip {
 function Update-RipDemonApp {
     <#
     .SYNOPSIS
-      Download latest RIP Demon release and replace app files if newer (or -Force).
+      Download RIP Demon from GitHub main and replace app files if changed (or -Force).
     #>
     param(
         [Parameter(Mandatory)][string]$InstallRoot,
@@ -681,43 +689,60 @@ function Update-RipDemonApp {
     } else {
         $null
     }
+    $currentCommit = Get-InstalledRipDemonCommit -InstallRoot $InstallRoot
 
-    Write-Host '  Checking for RIP Demon updates...' -ForegroundColor Cyan
-    $latest = Get-RipDemonLatestRelease
+    Write-Host '  Checking GitHub main for RIP Demon updates...' -ForegroundColor Cyan
+    $latest = Get-RipDemonRepoSource
 
-    if (-not $Force -and $current) {
-        $cmp = Compare-RipDemonVersion -VersionA $current -VersionB $latest.Version
-        if ($cmp -ge 0) {
-            Write-Host "  RIP Demon $current is already up to date." -ForegroundColor Green
-            return [pscustomobject]@{
-                Updated = $false
-                Version = $current
-                Latest  = $latest.Version
-            }
+    $sameVersion = $false
+    if ($current) {
+        try {
+            $sameVersion = (Compare-RipDemonVersion -VersionA $current -VersionB $latest.Version) -eq 0
+        } catch {
+            $sameVersion = ($current -eq $latest.Version)
         }
-        Write-Host "  Updating RIP Demon $current -> $($latest.Version)" -ForegroundColor Yellow
     }
-    elseif ($current) {
-        Write-Host "  Force-refreshing RIP Demon $current -> $($latest.Version)" -ForegroundColor Yellow
+    $sameCommit = $latest.Commit -and $currentCommit -and ($currentCommit -eq $latest.Commit)
+
+    if (-not $Force -and $current -and $sameVersion -and ($sameCommit -or -not $latest.Commit)) {
+        $label = if ($currentCommit) { "$current ($($currentCommit.Substring(0, [Math]::Min(7, $currentCommit.Length))))" } else { $current }
+        Write-Host "  RIP Demon $label is already up to date." -ForegroundColor Green
+        return [pscustomobject]@{
+            Updated = $false
+            Version = $current
+            Latest  = $latest.Version
+            Commit  = $currentCommit
+        }
+    }
+
+    if ($current) {
+        $from = if ($currentCommit) { "$current@$($currentCommit.Substring(0, [Math]::Min(7, $currentCommit.Length)))" } else { $current }
+        $to = if ($latest.Commit) { "$($latest.Version)@$($latest.Commit.Substring(0, 7))" } else { $latest.Version }
+        if ($Force) {
+            Write-Host "  Force-refreshing RIP Demon $from -> $to (main)" -ForegroundColor Yellow
+        } else {
+            Write-Host "  Updating RIP Demon $from -> $to (main)" -ForegroundColor Yellow
+        }
     }
     else {
-        Write-Host "  Installing RIP Demon $($latest.Version) app files..." -ForegroundColor Yellow
+        $to = if ($latest.Commit) { "$($latest.Version)@$($latest.Commit.Substring(0, 7))" } else { $latest.Version }
+        Write-Host "  Installing RIP Demon $to from main..." -ForegroundColor Yellow
     }
 
     $zipPath = Join-Path $env:TEMP ("ripdemon-update-{0}.zip" -f [guid]::NewGuid().ToString('N'))
     try {
-        $mb = if ($latest.Size) { '{0:N0} MB' -f ($latest.Size / 1MB) } else { $null }
         Save-RipDemonFile -Uri $latest.Url -OutFile $zipPath `
-            -Label "Downloading RIP Demon $($latest.Version)" `
-            -ExpectedSize $mb -ExpectedSha256 $latest.Sha256 -ExpectedByteSize $latest.Size
+            -Label "Downloading RIP Demon from GitHub ($($latest.Branch))"
 
         $result = Install-RipDemonAppFromZip -ZipPath $zipPath -InstallRoot $InstallRoot
+        Set-InstalledRipDemonCommit -InstallRoot $InstallRoot -Commit $latest.Commit
         Register-RipDemonUninstall -InstallRoot $InstallRoot -Version $result.Version | Out-Null
 
         return [pscustomobject]@{
             Updated = $true
             Version = $result.Version
             Latest  = $latest.Version
+            Commit  = $latest.Commit
         }
     }
     finally {
