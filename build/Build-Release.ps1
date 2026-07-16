@@ -68,6 +68,7 @@ $iscc = @(
     "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
+$setupPath = Join-Path $distDir "RIP-Demon-Setup-$version.exe"
 if ($iscc) {
     Write-Host "Compiling Inno Setup installer..." -ForegroundColor Cyan
     $iss = Join-Path $ProjectRoot 'build\RIP-Demon.iss'
@@ -81,6 +82,19 @@ if ($iscc) {
     Write-Host "Inno Setup not found - skipped Setup.exe (zip is ready)." -ForegroundColor DarkGray
 }
 
-# Cleanup stage folder (keep zip)
+# SHA256SUMS.txt for web install / self-update verification
+$sumsPath = Join-Path $distDir 'SHA256SUMS.txt'
+$sumsLines = New-Object System.Collections.Generic.List[string]
+$zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$sumsLines.Add("$zipHash  $(Split-Path -Leaf $zipPath)")
+if (Test-Path -LiteralPath $setupPath) {
+    $setupHash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sumsLines.Add("$setupHash  $(Split-Path -Leaf $setupPath)")
+}
+Set-Content -Path $sumsPath -Value ($sumsLines -join "`n") -Encoding ascii -NoNewline
+Add-Content -Path $sumsPath -Value "`n" -Encoding ascii
+Write-Host "Created: $sumsPath" -ForegroundColor Green
+
+# Cleanup stage folder (keep zip + sums)
 Remove-Item -Recurse -Force $stageDir
 Write-Host "Done." -ForegroundColor Green

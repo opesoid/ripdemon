@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Smoke tests
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Smoke.ps1 -SkipBuild
+
+      - name: Build release
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
+
+      - name: Resolve version and assets
+        id: meta
+        shell: pwsh
+        run: |
+          $version = (Get-Content .\VERSION -Raw).Trim()
+          $tag = "${{ github.ref_name }}"
+          $tagVer = $tag.TrimStart('v')
+          if ($tagVer -ne $version) {
+            Write-Error "Tag version ($tagVer) does not match VERSION file ($version)."
+            exit 1
+          }
+          $zip = "dist/RIP-Demon-$version-windows.zip"
+          $sums = "dist/SHA256SUMS.txt"
+          if (-not (Test-Path $zip)) { throw "Missing $zip" }
+          if (-not (Test-Path $sums)) { throw "Missing $sums" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "sums=$sums" >> $env:GITHUB_OUTPUT
+          $setup = "dist/RIP-Demon-Setup-$version.exe"
+          if (Test-Path $setup) {
+            "setup=$setup" >> $env:GITHUB_OUTPUT
+          } else {
+            "setup=" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: RIP Demon ${{ steps.meta.outputs.version }}
+          body: |
+            ## RIP Demon ${{ steps.meta.outputs.version }}
+
+            ### Install (one line)
+
+            ```powershell
+            irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
+            ```
+
+            Or download `RIP-Demon-${{ steps.meta.outputs.version }}-windows.zip`, unzip, and run `Install.cmd`.
+
+            Verify downloads against `SHA256SUMS.txt`.
+
+            ### Update
+
+            ```bat
+            yt update
+            ```
+
+            See [CHANGELOG.md](https://github.com/opesoid/ripdemon/blob/main/CHANGELOG.md) for details.
+          files: |
+            ${{ steps.meta.outputs.zip }}
+            ${{ steps.meta.outputs.sums }}
+            ${{ steps.meta.outputs.setup }}
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

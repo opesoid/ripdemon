@@ -49,46 +49,13 @@ function Write-Step([string]$Message) {
     Write-Host "  [$script:step/$totalSteps] $Message" -ForegroundColor Cyan
 }
 
-# --- Directories ---
-$binDir     = Join-Path $InstallRoot 'bin'
-$libDir     = Join-Path $InstallRoot 'lib'
-$guiDir     = Join-Path $InstallRoot 'gui'
-$toolsDir   = Join-Path $InstallRoot 'tools'
-$updaterDir = Join-Path $InstallRoot 'updater'
-
-foreach ($d in @($InstallRoot, $binDir, $libDir, $guiDir, $toolsDir, $updaterDir)) {
-    New-Item -ItemType Directory -Force -Path $d | Out-Null
-}
+$binDir   = Join-Path $InstallRoot 'bin'
+$libDir   = Join-Path $InstallRoot 'lib'
+$toolsDir = Join-Path $InstallRoot 'tools'
 
 Write-Step 'Copying application files...'
-
-$srcYt  = Join-Path $ProjectRoot 'src\yt.cmd'
-$srcLib = Join-Path $ProjectRoot 'src\lib'
-$srcGui = Join-Path $ProjectRoot 'src\gui'
-$srcUpd = Join-Path $ProjectRoot 'updater'
-$srcUnin = Join-Path $ProjectRoot 'installer\Uninstall.ps1'
-
-if (-not (Test-Path $srcYt)) {
-    throw "Missing source file: $srcYt - run installer from the RIP-Demon project folder."
-}
-
-Copy-Item -Force $srcYt (Join-Path $binDir 'yt.cmd')
-Copy-Item -Force (Join-Path $srcLib '*') $libDir
-if (Test-Path $srcGui) {
-    Copy-Item -Force (Join-Path $srcGui '*') $guiDir
-}
-Copy-Item -Force (Join-Path $srcUpd 'Update.ps1') $updaterDir
-Copy-Item -Force (Join-Path $srcUpd 'RipDemon.Tools.ps1') $updaterDir
-Copy-Item -Force $srcUnin (Join-Path $InstallRoot 'Uninstall.ps1')
-Copy-Item -Force (Join-Path $ProjectRoot 'installer\Uninstall.cmd') (Join-Path $InstallRoot 'Uninstall.cmd')
-Copy-Item -Force (Join-Path $ProjectRoot 'installer\Update.cmd') (Join-Path $InstallRoot 'Update.cmd')
-Set-Content -Path (Join-Path $InstallRoot 'version.txt') -Value $version -NoNewline
-foreach ($doc in @('README.md', 'LICENSE', 'CHANGELOG.md')) {
-    $src = Join-Path $ProjectRoot $doc
-    if (Test-Path $src) {
-        Copy-Item -Force $src (Join-Path $InstallRoot $doc)
-    }
-}
+$copyResult = Copy-RipDemonAppFiles -ProjectRoot $ProjectRoot -InstallRoot $InstallRoot
+$version = $copyResult.Version
 Write-Host '  Application files copied.' -ForegroundColor Green
 
 Write-Step 'First-run setup...'

@@ -457,6 +457,274 @@ function Ensure-RipDemonTools {
     return [pscustomobject]@{ YtDlp = $yt; Ffmpeg = $ff; Deno = $deno }
 }
 
+# --- RIP Demon app releases (opesoid/ripdemon) ---
+
+$script:RipDemonGitHubRepo = 'opesoid/ripdemon'
+
+function Normalize-RipDemonVersion {
+    param([string]$Version)
+    if (-not $Version) { return $null }
+    $v = $Version.Trim() -replace '^[vV]', ''
+    if ($v -match '^(\d+\.\d+\.\d+)') { return $Matches[1] }
+    return $v
+}
+
+function Compare-RipDemonVersion {
+    <#
+    .SYNOPSIS
+      Compare two x.y.z versions. Returns -1 if A < B, 0 if equal, 1 if A > B.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$VersionA,
+        [Parameter(Mandatory)][string]$VersionB
+    )
+    $a = Normalize-RipDemonVersion $VersionA
+    $b = Normalize-RipDemonVersion $VersionB
+    if (-not $a -or -not $b) {
+        throw "Invalid version(s) for compare: '$VersionA' vs '$VersionB'"
+    }
+    try {
+        $va = [version]$a
+        $vb = [version]$b
+    } catch {
+        throw "Invalid version(s) for compare: '$VersionA' vs '$VersionB'"
+    }
+    if ($va -lt $vb) { return -1 }
+    if ($va -gt $vb) { return 1 }
+    return 0
+}
+
+function Get-RipDemonLatestRelease {
+    <#
+    .SYNOPSIS
+      Latest GitHub release zip + SHA256 for RIP Demon itself.
+    #>
+    $api = "https://api.github.com/repos/$script:RipDemonGitHubRepo/releases/latest"
+    try {
+        $release = Invoke-RestMethod -Uri $api -Headers (Get-RipDemonGitHubHeaders)
+    } catch {
+        $msg = $_.Exception.Message
+        if ($msg -match '404|Not Found') {
+            throw "No GitHub release yet for $script:RipDemonGitHubRepo. Publish a release (tag vX.Y.Z) before using web install / self-update."
+        }
+        throw "Failed to query GitHub releases for $script:RipDemonGitHubRepo`: $msg"
+    }
+
+    if (-not $release -or -not $release.assets -or $release.assets.Count -eq 0) {
+        throw "No GitHub release assets for $script:RipDemonGitHubRepo. Publish RIP-Demon-*-windows.zip + SHA256SUMS.txt."
+    }
+
+    $zipAsset = $release.assets | Where-Object {
+        $_.name -match '^RIP-Demon-.+-windows\.zip$'
+    } | Select-Object -First 1
+    if (-not $zipAsset) {
+        throw 'Latest release has no RIP-Demon-*-windows.zip asset.'
+    }
+
+    $sha = Get-AssetDigestSha256 -Asset $zipAsset
+    if (-not $sha) {
+        $sumsAsset = $release.assets | Where-Object {
+            $_.name -ieq 'SHA256SUMS.txt' -or $_.name -ieq 'SHA256SUMS'
+        } | Select-Object -First 1
+        if ($sumsAsset) {
+            $sha = Get-Sha256FromSumFile -SumFileUri $sumsAsset.browser_download_url -FileName $zipAsset.name
+        }
+    }
+    if (-not $sha) {
+        throw "Could not obtain SHA256 for $($zipAsset.name) (missing digest / SHA256SUMS.txt)."
+    }
+
+    $version = Normalize-RipDemonVersion $release.tag_name
+    if (-not $version) { $version = Normalize-RipDemonVersion $release.name }
+    if (-not $version) {
+        if ($zipAsset.name -match 'RIP-Demon-(\d+\.\d+\.\d+)-windows\.zip') {
+            $version = $Matches[1]
+        }
+    }
+    if (-not $version) {
+        throw "Could not determine version from release tag '$($release.tag_name)'."
+    }
+
+    [pscustomobject]@{
+        Tag     = $release.tag_name
+        Version = $version
+        Url     = $zipAsset.browser_download_url
+        Name    = $zipAsset.name
+        Size    = [long]$zipAsset.size
+        Sha256  = $sha
+    }
+}
+
+function Resolve-RipDemonProjectRoot {
+    param([Parameter(Mandatory)][string]$ExtractDir)
+    if (Test-Path -LiteralPath (Join-Path $ExtractDir 'src\yt.cmd')) {
+        return $ExtractDir
+    }
+    $child = Get-ChildItem -LiteralPath $ExtractDir -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'src\yt.cmd') } |
+        Select-Object -First 1
+    if ($child) { return $child.FullName }
+    throw "Could not find RIP Demon project root under $ExtractDir (missing src\yt.cmd)."
+}
+
+function Copy-RipDemonAppFiles {
+    <#
+    .SYNOPSIS
+      Copy app files from a project/release tree into an install root.
+      Does not touch config.ini or tools\.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [Parameter(Mandatory)][string]$InstallRoot
+    )
+
+    $binDir     = Join-Path $InstallRoot 'bin'
+    $libDir     = Join-Path $InstallRoot 'lib'
+    $guiDir     = Join-Path $InstallRoot 'gui'
+    $toolsDir   = Join-Path $InstallRoot 'tools'
+    $updaterDir = Join-Path $InstallRoot 'updater'
+
+    foreach ($d in @($InstallRoot, $binDir, $libDir, $guiDir, $toolsDir, $updaterDir)) {
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+    }
+
+    $srcYt   = Join-Path $ProjectRoot 'src\yt.cmd'
+    $srcLib  = Join-Path $ProjectRoot 'src\lib'
+    $srcGui  = Join-Path $ProjectRoot 'src\gui'
+    $srcUpd  = Join-Path $ProjectRoot 'updater'
+    $srcUnin = Join-Path $ProjectRoot 'installer\Uninstall.ps1'
+
+    if (-not (Test-Path -LiteralPath $srcYt)) {
+        throw "Missing source file: $srcYt - run installer from the RIP-Demon project folder."
+    }
+
+    $versionFile = Join-Path $ProjectRoot 'VERSION'
+    if (-not (Test-Path -LiteralPath $versionFile)) {
+        $versionFile = Join-Path $InstallRoot 'version.txt'
+    }
+    $version = if (Test-Path -LiteralPath $versionFile) {
+        (Get-Content -LiteralPath $versionFile -Raw).Trim()
+    } else {
+        '1.0.0'
+    }
+
+    Copy-Item -Force $srcYt (Join-Path $binDir 'yt.cmd')
+    Copy-Item -Force (Join-Path $srcLib '*') $libDir
+    if (Test-Path -LiteralPath $srcGui) {
+        Copy-Item -Force (Join-Path $srcGui '*') $guiDir
+    }
+    Copy-Item -Force (Join-Path $srcUpd 'Update.ps1') $updaterDir
+    Copy-Item -Force (Join-Path $srcUpd 'RipDemon.Tools.ps1') $updaterDir
+    if (Test-Path -LiteralPath $srcUnin) {
+        Copy-Item -Force $srcUnin (Join-Path $InstallRoot 'Uninstall.ps1')
+    }
+    $uninCmd = Join-Path $ProjectRoot 'installer\Uninstall.cmd'
+    if (Test-Path -LiteralPath $uninCmd) {
+        Copy-Item -Force $uninCmd (Join-Path $InstallRoot 'Uninstall.cmd')
+    }
+    $updCmd = Join-Path $ProjectRoot 'installer\Update.cmd'
+    if (Test-Path -LiteralPath $updCmd) {
+        Copy-Item -Force $updCmd (Join-Path $InstallRoot 'Update.cmd')
+    }
+    Set-Content -Path (Join-Path $InstallRoot 'version.txt') -Value $version -NoNewline
+    foreach ($doc in @('README.md', 'LICENSE', 'CHANGELOG.md')) {
+        $src = Join-Path $ProjectRoot $doc
+        if (Test-Path -LiteralPath $src) {
+            Copy-Item -Force $src (Join-Path $InstallRoot $doc)
+        }
+    }
+
+    return [pscustomobject]@{
+        Version = $version
+        BinDir  = $binDir
+    }
+}
+
+function Install-RipDemonAppFromZip {
+    <#
+    .SYNOPSIS
+      Extract a release zip and copy app files into InstallRoot (keeps config.ini / tools).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ZipPath,
+        [Parameter(Mandatory)][string]$InstallRoot
+    )
+
+    $extractDir = Join-Path $env:TEMP ("ripdemon-app-{0}" -f [guid]::NewGuid().ToString('N'))
+    try {
+        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+        Write-Host '  Extracting RIP Demon package...' -ForegroundColor Cyan
+        Expand-Archive -Path $ZipPath -DestinationPath $extractDir -Force
+        $projectRoot = Resolve-RipDemonProjectRoot -ExtractDir $extractDir
+        $result = Copy-RipDemonAppFiles -ProjectRoot $projectRoot -InstallRoot $InstallRoot
+        Write-Host "  Application files updated to $($result.Version)." -ForegroundColor Green
+        return $result
+    }
+    finally {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $extractDir
+    }
+}
+
+function Update-RipDemonApp {
+    <#
+    .SYNOPSIS
+      Download latest RIP Demon release and replace app files if newer (or -Force).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$InstallRoot,
+        [switch]$Force
+    )
+
+    $versionFile = Join-Path $InstallRoot 'version.txt'
+    $current = if (Test-Path -LiteralPath $versionFile) {
+        (Get-Content -LiteralPath $versionFile -Raw).Trim()
+    } else {
+        $null
+    }
+
+    Write-Host '  Checking for RIP Demon updates...' -ForegroundColor Cyan
+    $latest = Get-RipDemonLatestRelease
+
+    if (-not $Force -and $current) {
+        $cmp = Compare-RipDemonVersion -VersionA $current -VersionB $latest.Version
+        if ($cmp -ge 0) {
+            Write-Host "  RIP Demon $current is already up to date." -ForegroundColor Green
+            return [pscustomobject]@{
+                Updated = $false
+                Version = $current
+                Latest  = $latest.Version
+            }
+        }
+        Write-Host "  Updating RIP Demon $current -> $($latest.Version)" -ForegroundColor Yellow
+    }
+    elseif ($current) {
+        Write-Host "  Force-refreshing RIP Demon $current -> $($latest.Version)" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "  Installing RIP Demon $($latest.Version) app files..." -ForegroundColor Yellow
+    }
+
+    $zipPath = Join-Path $env:TEMP ("ripdemon-update-{0}.zip" -f [guid]::NewGuid().ToString('N'))
+    try {
+        $mb = if ($latest.Size) { '{0:N0} MB' -f ($latest.Size / 1MB) } else { $null }
+        Save-RipDemonFile -Uri $latest.Url -OutFile $zipPath `
+            -Label "Downloading RIP Demon $($latest.Version)" `
+            -ExpectedSize $mb -ExpectedSha256 $latest.Sha256 -ExpectedByteSize $latest.Size
+
+        $result = Install-RipDemonAppFromZip -ZipPath $zipPath -InstallRoot $InstallRoot
+        Register-RipDemonUninstall -InstallRoot $InstallRoot -Version $result.Version | Out-Null
+
+        return [pscustomobject]@{
+            Updated = $true
+            Version = $result.Version
+            Latest  = $latest.Version
+        }
+    }
+    finally {
+        Remove-Item -Force -ErrorAction SilentlyContinue $zipPath
+    }
+}
+
 function Add-UserPathEntry {
     param([Parameter(Mandatory)][string]$Entry)
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')

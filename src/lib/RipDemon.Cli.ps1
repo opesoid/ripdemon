@@ -177,7 +177,7 @@ function Show-RipDemonUsage {
     Write-Host '    yt info [options] <url>           Show title, duration, formats'
     Write-Host '    yt gui                            Open the download window'
     Write-Host '    yt config                         Show config path and settings'
-    Write-Host '    yt update                         Update yt-dlp + ffmpeg + deno'
+    Write-Host '    yt update                         Update RIP Demon + yt-dlp / ffmpeg / deno'
     Write-Host '    yt version                        Show versions'
     Write-Host '    yt uninstall                      Remove RIP Demon'
     Write-Host '    yt help                           Show this help'

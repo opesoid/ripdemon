@@ -40,13 +40,15 @@ $required = @(
     'src\gui\RipDemon.Gui.ps1',
     'installer\Install.ps1',
     'installer\Install.cmd',
+    'installer\web-install.ps1',
     'installer\Uninstall.ps1',
     'installer\Uninstall.cmd',
     'installer\Update.cmd',
     'updater\Update.ps1',
     'updater\RipDemon.Tools.ps1',
     'build\Build-Release.ps1',
-    'build\RIP-Demon.iss'
+    'build\RIP-Demon.iss',
+    '.github\workflows\release.yml'
 )
 foreach ($rel in $required) {
     Assert-True (Test-Path (Join-Path $ProjectRoot $rel)) "exists: $rel"
@@ -62,7 +64,12 @@ Assert-True ($iss -notmatch 'Update-AppFromGitHub|OWNER/RIP-Demon') 'Inno script
 Assert-True ($iss -notmatch '\[Icons\]') 'Inno does not duplicate Start Menu [Icons]'
 
 $tools = Get-Content (Join-Path $ProjectRoot 'updater\RipDemon.Tools.ps1') -Raw
-Assert-True ($tools -notmatch 'function Update-AppFromGitHub') 'self-update function removed'
+Assert-True ($tools -match 'function Get-RipDemonLatestRelease') 'Get-RipDemonLatestRelease present'
+Assert-True ($tools -match 'function Compare-RipDemonVersion') 'Compare-RipDemonVersion present'
+Assert-True ($tools -match 'function Copy-RipDemonAppFiles') 'Copy-RipDemonAppFiles present'
+Assert-True ($tools -match 'function Install-RipDemonAppFromZip') 'Install-RipDemonAppFromZip present'
+Assert-True ($tools -match 'function Update-RipDemonApp') 'Update-RipDemonApp present'
+Assert-True ($tools -match 'opesoid/ripdemon') 'GitHub repo id present'
 Assert-True ($tools -match 'Assert-RipDemonFileSha256') 'SHA256 verification present'
 Assert-True ($tools -match 'ffmpeg\.version') 'ffmpeg version marker present'
 Assert-True ($tools -match 'function Get-RipDemonOutputDirs') 'shared output dirs helper present'
@@ -75,16 +82,25 @@ Assert-True ($tools -match 'opes\.dev') 'branding URL opes.dev present'
 $readme = Get-Content (Join-Path $ProjectRoot 'README.md') -Raw
 Assert-True ($readme -match 'opes\.dev') 'README mentions opes.dev'
 Assert-True ($readme -match 'Version 1\.0\.0|currently \*\*1\.0\.0\*\*|Version \| \*\*1\.0\.0\*\*') 'README documents 1.0.0'
+Assert-True ($readme -match 'web-install\.ps1') 'README documents web-install'
+Assert-True ($readme -match 'irm https://raw\.githubusercontent\.com/opesoid/ripdemon') 'README has one-liner install'
 
 $license = Get-Content (Join-Path $ProjectRoot 'LICENSE') -Raw
 Assert-True ($license -match 'Opes') 'LICENSE copyright is Opes'
 
 $update = Get-Content (Join-Path $ProjectRoot 'updater\Update.ps1') -Raw
-Assert-True ($update -notmatch 'Update-AppFromGitHub') 'Update.ps1 does not call self-update'
+Assert-True ($update -match 'Update-RipDemonApp') 'Update.ps1 calls Update-RipDemonApp'
+Assert-True ($update -match 'SkipApp') 'Update.ps1 supports -SkipApp'
+Assert-True ($update -match 'AppOnly') 'Update.ps1 supports -AppOnly'
+
+$webInstall = Get-Content (Join-Path $ProjectRoot 'installer\web-install.ps1') -Raw
+Assert-True ($webInstall -match 'Get-RipDemonLatestRelease') 'web-install uses Get-RipDemonLatestRelease'
+Assert-True ($webInstall -match 'Install\.ps1') 'web-install invokes Install.ps1'
 
 $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw
 Assert-True ($yt -match 'RipDemon\.Cli\.ps1') 'yt.cmd forwards to RipDemon.Cli.ps1'
 Assert-True ($yt -match 'version') 'yt.cmd supports version'
+Assert-True ($yt -match 'Update\.ps1" %\*') 'yt update forwards args to Update.ps1'
 
 $cli = Get-Content (Join-Path $ProjectRoot 'src\lib\RipDemon.Cli.ps1') -Raw
 Assert-True ($cli -match '--no-playlist') 'CLI supports --no-playlist'
@@ -105,6 +121,23 @@ Assert-True ($config -match [regex]::Escape('Music\RIP Demon\MP3')) 'config ment
 Assert-True ($config -match [regex]::Escape('Videos\RIP Demon\MP4')) 'config mentions MP4 path'
 Assert-True ($dirs.Mp3 -match 'Music\\RIP Demon\\MP3$') "Get-RipDemonOutputDirs MP3 ($($dirs.Mp3))"
 Assert-True ($dirs.Mp4 -match 'Videos\\RIP Demon\\MP4$') "Get-RipDemonOutputDirs MP4 ($($dirs.Mp4))"
+
+# --- Version compare (no network) ---
+Assert-True ((Compare-RipDemonVersion -VersionA '1.0.0' -VersionB '1.0.0') -eq 0) 'Compare equal versions'
+Assert-True ((Compare-RipDemonVersion -VersionA '1.0.0' -VersionB '1.0.1') -eq -1) 'Compare older < newer'
+Assert-True ((Compare-RipDemonVersion -VersionA '1.2.0' -VersionB '1.0.9') -eq 1) 'Compare newer > older'
+Assert-True ((Compare-RipDemonVersion -VersionA 'v1.0.0' -VersionB '1.0.0') -eq 0) 'Compare strips v prefix'
+
+# --- Copy-RipDemonAppFiles preserves config.ini ---
+$copyRoot = Join-Path $env:TEMP ("ripdemon-copy-{0}" -f [guid]::NewGuid().ToString('N'))
+$copyInstall = Join-Path $copyRoot 'install'
+New-Item -ItemType Directory -Force -Path $copyInstall | Out-Null
+Set-Content -Path (Join-Path $copyInstall 'config.ini') -Value "; keep me`n" -NoNewline
+$copied = Copy-RipDemonAppFiles -ProjectRoot $ProjectRoot -InstallRoot $copyInstall
+Assert-True ($copied.Version -eq $version) "Copy-RipDemonAppFiles version ($($copied.Version))"
+Assert-True (Test-Path (Join-Path $copyInstall 'bin\yt.cmd')) 'Copy-RipDemonAppFiles wrote bin\yt.cmd'
+Assert-True ((Get-Content (Join-Path $copyInstall 'config.ini') -Raw) -match 'keep me') 'Copy-RipDemonAppFiles kept config.ini'
+Remove-Item -Recurse -Force $copyRoot -ErrorAction SilentlyContinue
 
 . (Join-Path $ProjectRoot 'src\lib\RipDemon.Config.ps1')
 $cfgObj = Get-RipDemonConfig -InstallRoot (Join-Path $env:TEMP 'ripdemon-no-such') -DefaultConfigPath (Join-Path $ProjectRoot 'src\lib\config.default.ini')
@@ -165,11 +198,20 @@ if (-not $SkipBuild) {
                 'src\lib\RipDemon.Cli.ps1',
                 'src\gui\RipDemon.Gui.ps1',
                 'installer\Install.ps1',
+                'installer\web-install.ps1',
                 'updater\RipDemon.Tools.ps1',
                 'LICENSE'
             )) {
             Assert-True (Test-Path (Join-Path $stage.FullName $inner)) "zip contains $inner"
         }
+    }
+    $sums = Join-Path $ProjectRoot 'dist\SHA256SUMS.txt'
+    Assert-True (Test-Path $sums) 'SHA256SUMS.txt exists after build'
+    if (Test-Path $sums) {
+        $sumsText = Get-Content $sums -Raw
+        Assert-True ($sumsText -match [regex]::Escape("RIP-Demon-$version-windows.zip")) 'SHA256SUMS lists release zip'
+        $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        Assert-True ($sumsText.ToLowerInvariant().Contains($zipHash)) 'SHA256SUMS hash matches zip'
     }
     Remove-Item -Recurse -Force $probe -ErrorAction SilentlyContinue
 }

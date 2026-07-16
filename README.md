@@ -49,6 +49,8 @@ Windows tool for downloading audio and video with short `yt` commands. Built on 
 - **Extras** — subtitles, SponsorBlock removal, thumbnail-only, yt-dlp passthrough (`--`)
 - **Config file** + first-run installer wizard
 - **Minimal GUI** (`yt gui` / Start Menu)
+- **One-line install** — `irm ... | iex` from GitHub (release zip, SHA256 verified)
+- **Self-update** — `yt update` upgrades RIP Demon and yt-dlp / ffmpeg / deno
 - **Tool updates** — yt-dlp, ffmpeg, deno from official releases (SHA256 verified)
 - **Clean lifecycle** — Apps & features, Start Menu, quiet uninstall; media files kept
 
@@ -66,9 +68,25 @@ Windows tool for downloading audio and video with short `yt` commands. Built on 
 
 ## Install
 
-Use the **`.cmd`** launchers. Double-clicking `.ps1` files often fails because of PowerShell execution policy.
+### One-line (recommended)
+
+In **PowerShell** (Windows 10+):
+
+```powershell
+irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1 | iex
+```
+
+This downloads the **latest GitHub Release** zip, verifies **SHA256**, then runs the installer (wizard + tool downloads). Requires a published release on [opesoid/ripdemon](https://github.com/opesoid/ripdemon/releases).
+
+Silent defaults (no wizard):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/opesoid/ripdemon/main/installer/web-install.ps1))) -SkipWizard
+```
 
 ### From a release zip
+
+Use the **`.cmd`** launchers. Double-clicking `.ps1` files often fails because of PowerShell execution policy.
 
 1. Download and unzip a release (or [build one](#build--test)).
 2. Double-click **`Install.cmd`** in the zip root (or `installer\Install.cmd` in this repo).
@@ -142,7 +160,7 @@ yt config
 | `yt info [options] <url>` | Title, duration, uploader, format list |
 | `yt gui` | Open the download window |
 | `yt config` | Show config path and active settings |
-| `yt update` | Update yt-dlp + ffmpeg + deno |
+| `yt update` | Update RIP Demon + yt-dlp / ffmpeg / deno |
 | `yt version` | Show RIP Demon and tool versions |
 | `yt uninstall` | Remove RIP Demon |
 | `yt help` | Show help |
@@ -300,25 +318,32 @@ Sites other than YouTube may work when yt-dlp supports them; quality ladders are
 
 ## Update
 
-### Tools (yt-dlp / ffmpeg / deno)
-
 ```bat
 yt update
 ```
 
 Or double-click `%LOCALAPPDATA%\RIP-Demon\Update.cmd`.
 
-Downloads are size- and SHA256-checked against upstream GitHub releases.
+This:
 
-Force a full re-download:
+1. Checks [GitHub Releases](https://github.com/opesoid/ripdemon/releases) for a newer RIP Demon zip (SHA256 verified) and replaces app files — **`config.ini` and `tools\` are kept**
+2. Updates **yt-dlp**, **ffmpeg**, and **deno** from their upstream releases (size + SHA256 checked)
+
+| Flag | Meaning |
+|------|---------|
+| `-Force` | Re-download app package and tools even if versions match |
+| `-SkipApp` | Tools only (skip RIP Demon self-update) |
+| `-AppOnly` | RIP Demon package only (skip tools) |
+
+```bat
+yt update -Force
+yt update -SkipApp
+yt update -AppOnly
+```
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\RIP-Demon\updater\Update.ps1" -Force
 ```
-
-### RIP Demon itself
-
-Re-run the installer from a newer release zip (or repo). There is no in-app self-update for the application package.
 
 ---
 
@@ -377,9 +402,14 @@ powershell -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
 Output:
 
 - `dist\RIP-Demon-1.0.0-windows.zip` — always
+- `dist\SHA256SUMS.txt` — checksums for web install / self-update
 - `dist\RIP-Demon-Setup-1.0.0.exe` — if [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed
 
 The zip includes a root `Install.cmd`. Tools are downloaded at install time (not shipped inside the zip).
+
+### Publish a GitHub Release
+
+Tag a version that matches [`VERSION`](VERSION) (e.g. `v1.0.0`). The [Release](.github/workflows/release.yml) workflow builds the zip, writes `SHA256SUMS.txt`, and uploads them to the release. That unlocks the one-line installer and `yt update` self-update.
 
 ### Smoke tests
 
@@ -423,11 +453,12 @@ rip-demon/
       RipDemon.Gui.ps1    WinForms UI
   installer/
     Install.cmd / .ps1
+    web-install.ps1       One-line irm | iex bootstrap
     Uninstall.cmd / .ps1
     Update.cmd
   updater/
-    Update.ps1
-    RipDemon.Tools.ps1    Downloads, PATH, shortcuts, wizard
+    Update.ps1            App + tool updates
+    RipDemon.Tools.ps1    Downloads, PATH, shortcuts, wizard, self-update
   build/
     Build-Release.ps1
     RIP-Demon.iss         Optional Inno Setup script
@@ -436,6 +467,7 @@ rip-demon/
     Integration.ps1
   .github/workflows/
     ci.yml
+    release.yml           Tag v* → GitHub Release assets
 ```
 
 ---
@@ -452,8 +484,10 @@ rip-demon/
 | Install fails on `.ps1` double-click | Use `Install.cmd` instead |
 | Slow first install | Normal — FFmpeg (~80 MB) and deno (~40 MB) download once |
 | ARM64 / non-x64 PC | Not supported — tools are x64-only |
-| Want defaults without prompts | `Install.ps1 -SkipWizard` |
-| GUI missing | Re-run the installer so `gui\RipDemon.Gui.ps1` is copied |
+| Want defaults without prompts | `Install.ps1 -SkipWizard` or web-install `-SkipWizard` |
+| GUI missing | Re-run the installer / `yt update -AppOnly` so `gui\RipDemon.Gui.ps1` is copied |
+| One-liner: no release yet | Publish a `vX.Y.Z` tag (see [Build & test](#build--test)); until then use `installer\Install.cmd` from a clone |
+| App update fails | Check internet / GitHub; try `yt update -SkipApp` for tools only |
 
 ---
 
