@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ripdemon.png" alt="RIP Demon" width="220">
+</p>
+
 # RIP Demon
 
 **Version 1.0.0** · by [Opes](https://opes.dev)
