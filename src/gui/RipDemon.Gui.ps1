@@ -42,6 +42,7 @@ $cfg = Get-RipDemonConfig -InstallRoot $InstallRoot -DefaultConfigPath (Join-Pat
 
 $YtDlp = Join-Path $InstallRoot 'tools\yt-dlp.exe'
 $ToolsDir = Join-Path $InstallRoot 'tools'
+Initialize-RipDemonToolsPath -ToolsDir $ToolsDir
 
 $Mp4Formats = @{
     '720'  = 'bv*[height=720][fps=60]+ba/bv*[height=720][fps>=50]+ba/bv*[height=720]+ba/bv*[height<=720]+ba/b'
@@ -49,7 +50,7 @@ $Mp4Formats = @{
     'best' = 'bv*+ba/b'
 }
 
-$appVer = '1.0.1'
+$appVer = '1.0.2'
 $verFile = Join-Path $InstallRoot 'version.txt'
 if (Test-Path -LiteralPath $verFile) { $appVer = (Get-Content -LiteralPath $verFile -Raw).Trim() }
 
@@ -429,6 +430,8 @@ function Reset-DownloadProgressUi {
     $script:pbDownload.Style = 'Continuous'
     $script:pbDownload.Value = 0
     $script:lblProgress.Text = 'Ready'
+    $script:lastProgressPct = -1
+    $script:lastProgressUiUtc = [datetime]::MinValue
 }
 
 function Update-DownloadProgressLine {
@@ -440,6 +443,12 @@ function Update-DownloadProgressLine {
 
     if ($t -match '^\[download\]\s+([\d.]+)%\s+of\s+(\S+)\s+at\s+(\S+)(?:\s+ETA\s+(\S+))?') {
         $pct = [int][double]$Matches[1]
+        $now = [datetime]::UtcNow
+        if (($pct -eq $script:lastProgressPct) -and (($now - $script:lastProgressUiUtc).TotalMilliseconds -lt 100)) {
+            return
+        }
+        $script:lastProgressPct = $pct
+        $script:lastProgressUiUtc = $now
         $script:pbDownload.Style = 'Continuous'
         $script:pbDownload.Value = [Math]::Min(100, [Math]::Max(0, $pct))
         $eta = if ($Matches[4]) { $Matches[4] } else { '...' }
@@ -448,12 +457,21 @@ function Update-DownloadProgressLine {
     }
     if ($t -match '^\[download\]\s+([\d.]+)%') {
         $pct = [int][double]$Matches[1]
+        $now = [datetime]::UtcNow
+        if (($pct -eq $script:lastProgressPct) -and (($now - $script:lastProgressUiUtc).TotalMilliseconds -lt 100)) {
+            return
+        }
+        $script:lastProgressPct = $pct
+        $script:lastProgressUiUtc = $now
         $script:pbDownload.Style = 'Continuous'
         $script:pbDownload.Value = [Math]::Min(100, [Math]::Max(0, $pct))
         $script:lblProgress.Text = "$($Matches[1])% downloaded"
         return
     }
     if ($t -match '^\[(download|ExtractAudio|Merger|ffmpeg|Metadata|SponsorBlock)\]') {
+        $now = [datetime]::UtcNow
+        if (($now - $script:lastProgressUiUtc).TotalMilliseconds -lt 100) { return }
+        $script:lastProgressUiUtc = $now
         $short = $t
         if ($short.Length -gt 72) { $short = $short.Substring(0, 72) + '...' }
         $script:lblProgress.Text = $short
@@ -462,7 +480,9 @@ function Update-DownloadProgressLine {
 
 function Invoke-RipDemonGuiYtDlpProcess {
     param(
-        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ArgumentList
+        [Parameter(Mandatory)][System.Collections.Generic.List[string]]$ArgumentList,
+        [scriptblock]$OnLine = $null,
+        [scriptblock]$OnStatus = $null
     )
 
     $argLine = ($ArgumentList | ForEach-Object {
@@ -476,58 +496,74 @@ function Invoke-RipDemonGuiYtDlpProcess {
     $psi.RedirectStandardOutput = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
+    # Ensure deno/ffmpeg side tools resolve (PS 5.1 has no ArgumentList API).
+    try {
+        $psi.EnvironmentVariables['Path'] = "$ToolsDir;" + $psi.EnvironmentVariables['Path']
+    } catch {}
 
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
+    # Async reads avoid the classic stdout/stderr ReadLine deadlock when one stream blocks.
+    $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
+    $onData = {
+        param($sender, $e)
+        if ($null -ne $e.Data) {
+            [void]$queue.Enqueue($e.Data)
+        }
+    }
+    $proc.add_OutputDataReceived($onData)
+    $proc.add_ErrorDataReceived($onData)
     [void]$proc.Start()
+    $proc.BeginOutputReadLine()
+    $proc.BeginErrorReadLine()
 
-    $captured = New-Object System.Text.StringBuilder
-    $stderr = $proc.StandardError
-    $stdout = $proc.StandardOutput
+    $buffer = New-RipDemonLineBuffer -Capacity 200
+    $line = $null
     while (-not $proc.HasExited) {
-        while (($line = $stderr.ReadLine()) -ne $null) {
-            [void]$captured.AppendLine($line)
-            Update-DownloadProgressLine $line
-            [System.Windows.Forms.Application]::DoEvents()
+        $got = $false
+        while ($queue.TryDequeue([ref]$line)) {
+            $got = $true
+            Add-RipDemonLineBuffer -Buffer $buffer -Line $line
+            if ($OnLine) { & $OnLine $line }
         }
-        while (($line = $stdout.ReadLine()) -ne $null) {
-            [void]$captured.AppendLine($line)
-            Update-DownloadProgressLine $line
-            [System.Windows.Forms.Application]::DoEvents()
+        if (-not $got) {
+            Start-Sleep -Milliseconds 40
         }
-        Start-Sleep -Milliseconds 80
-        [System.Windows.Forms.Application]::DoEvents()
-    }
-    while (($line = $stderr.ReadLine()) -ne $null) {
-        [void]$captured.AppendLine($line)
-        Update-DownloadProgressLine $line
-        [System.Windows.Forms.Application]::DoEvents()
-    }
-    while (($line = $stdout.ReadLine()) -ne $null) {
-        [void]$captured.AppendLine($line)
-        Update-DownloadProgressLine $line
-        [System.Windows.Forms.Application]::DoEvents()
     }
     $proc.WaitForExit()
+    $deadline = [datetime]::UtcNow.AddMilliseconds(1500)
+    do {
+        while ($queue.TryDequeue([ref]$line)) {
+            Add-RipDemonLineBuffer -Buffer $buffer -Line $line
+            if ($OnLine) { & $OnLine $line }
+        }
+        if (-not $queue.IsEmpty) {
+            Start-Sleep -Milliseconds 20
+        }
+    } while ((-not $queue.IsEmpty) -and ([datetime]::UtcNow -lt $deadline))
+
     return [pscustomobject]@{
         ExitCode = [int]$proc.ExitCode
-        Output   = $captured.ToString()
+        Output   = (Get-RipDemonLineBufferText -Buffer $buffer)
     }
 }
 
-function Invoke-RipDemonGuiDownload {
+function New-RipDemonGuiDownloadArgs {
     param(
         [Parameter(Mandatory)][string]$Mode,
-        [Parameter(Mandatory)][string]$Url
+        [Parameter(Mandatory)][string]$Url,
+        [Parameter(Mandatory)][bool]$NoPlaylist,
+        [Parameter(Mandatory)][string]$Cookies,
+        [Parameter(Mandatory)][bool]$ThumbnailOnly,
+        [Parameter(Mandatory)][string]$Quality,
+        [Parameter(Mandatory)][bool]$SponsorBlock,
+        [Parameter(Mandatory)][bool]$Subs,
+        [Parameter(Mandatory)][string]$SubsLang,
+        [Parameter(Mandatory)][string]$OutDir
     )
 
-    if (-not (Test-Path -LiteralPath $YtDlp)) {
-        throw 'yt-dlp not found. Run: yt update'
-    }
-
-    $outDir = if ($Mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
-    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-    $template = Join-Path $outDir '%(title)s [%(id)s].%(ext)s'
+    New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+    $template = Join-Path $OutDir '%(title)s [%(id)s].%(ext)s'
 
     $yargs = New-Object System.Collections.Generic.List[string]
     $yargs.Add('--ffmpeg-location'); $yargs.Add($ToolsDir)
@@ -536,14 +572,13 @@ function Invoke-RipDemonGuiDownload {
     $yargs.Add('--progress')
     $yargs.Add('-o'); $yargs.Add($template)
 
-    if ($chkNoPl.Checked) { $yargs.Add('--no-playlist') }
-    $cookies = $cmbCookies.Text.Trim()
-    $cookiesEnabled = ($cookies -and $cookies -ne '(none)')
+    if ($NoPlaylist) { $yargs.Add('--no-playlist') }
+    $cookiesEnabled = ($Cookies -and $Cookies -ne '(none)')
     if ($cookiesEnabled) {
-        $yargs.Add('--cookies-from-browser'); $yargs.Add($cookies)
+        $yargs.Add('--cookies-from-browser'); $yargs.Add($Cookies)
     }
 
-    if ($chkThumb.Checked) {
+    if ($ThumbnailOnly) {
         $yargs.Add('--skip-download')
         $yargs.Add('--write-thumbnail')
         $yargs.Add('--convert-thumbnails'); $yargs.Add('jpg')
@@ -556,21 +591,19 @@ function Invoke-RipDemonGuiDownload {
         $yargs.Add('--embed-metadata')
     }
     else {
-        $q = [string]$cmbQuality.SelectedItem
-        $fmt = $Mp4Formats[$q]
+        $fmt = $Mp4Formats[$Quality]
         if (-not $fmt) { $fmt = $Mp4Formats['1080'] }
         $yargs.Add('-f'); $yargs.Add($fmt)
         $yargs.Add('--merge-output-format'); $yargs.Add('mp4')
         $yargs.Add('--embed-metadata')
-        if ($chkSponsor.Checked) {
+        if ($SponsorBlock) {
             $yargs.Add('--sponsorblock-remove'); $yargs.Add('default')
         }
-        if ($chkSubs.Checked) {
+        if ($Subs) {
             $yargs.Add('--write-subs')
             $yargs.Add('--embed-subs')
-            $lang = $cmbSubsLang.Text.Trim()
-            if ($lang) {
-                $yargs.Add('--sub-langs'); $yargs.Add($lang)
+            if ($SubsLang) {
+                $yargs.Add('--sub-langs'); $yargs.Add($SubsLang)
             } else {
                 $yargs.Add('--sub-langs'); $yargs.Add('en.*,en')
             }
@@ -580,19 +613,40 @@ function Invoke-RipDemonGuiDownload {
     $yargs.Add('--')
     $yargs.Add($Url)
 
-    $result = Invoke-RipDemonGuiYtDlpProcess -ArgumentList $yargs
+    return [pscustomobject]@{
+        ArgumentList   = $yargs
+        CookiesEnabled = $cookiesEnabled
+        Cookies        = $Cookies
+        OutDir         = $OutDir
+    }
+}
+
+function Invoke-RipDemonGuiDownload {
+    param(
+        [Parameter(Mandatory)]$Job,
+        [scriptblock]$OnLine = $null,
+        [scriptblock]$OnStatus = $null
+    )
+
+    if (-not (Test-Path -LiteralPath $YtDlp)) {
+        throw 'yt-dlp not found. Run: yt update'
+    }
+
+    $yargs = $Job.ArgumentList
+    $cookiesEnabled = [bool]$Job.CookiesEnabled
+    $cookies = [string]$Job.Cookies
+
+    $result = Invoke-RipDemonGuiYtDlpProcess -ArgumentList $yargs -OnLine $OnLine
     if ($result.ExitCode -eq 0) {
         return [pscustomobject]@{ ExitCode = 0; CookieFallback = $false; CookieError = $false }
     }
 
     if ($cookiesEnabled -and (Test-RipDemonCookieDecryptError -Text $result.Output)) {
-        $lblStatus.ForeColor = $cMuted
-        $lblStatus.Text = "Cookie decrypt failed ($cookies). Retrying without cookies..."
-        $lblProgress.Text = 'Retrying...'
-        $pbDownload.Value = 0
-        $form.Refresh()
+        if ($OnStatus) {
+            & $OnStatus "Cookie decrypt failed ($cookies). Retrying without cookies..."
+        }
         Remove-RipDemonCookiesFromBrowserArgs -ArgumentList $yargs
-        $retry = Invoke-RipDemonGuiYtDlpProcess -ArgumentList $yargs
+        $retry = Invoke-RipDemonGuiYtDlpProcess -ArgumentList $yargs -OnLine $OnLine
         return [pscustomobject]@{
             ExitCode       = [int]$retry.ExitCode
             CookieFallback = $true
@@ -609,8 +663,108 @@ function Invoke-RipDemonGuiDownload {
 
 Update-ModeUi
 Set-StatusHint
+Reset-DownloadProgressUi
+
+$script:downloadWorker = New-Object System.ComponentModel.BackgroundWorker
+$script:downloadWorker.WorkerReportsProgress = $true
+$script:downloadWorker.WorkerSupportsCancellation = $false
+$script:downloadBusy = $false
+
+$script:downloadWorker.add_DoWork({
+    param($sender, $e)
+    $job = $e.Argument
+    $worker = $sender
+    $onLine = {
+        param($line)
+        $worker.ReportProgress(0, @{ Kind = 'line'; Text = [string]$line })
+    }.GetNewClosure()
+    $onStatus = {
+        param($text)
+        $worker.ReportProgress(0, @{ Kind = 'status'; Text = [string]$text })
+    }.GetNewClosure()
+    try {
+        $e.Result = Invoke-RipDemonGuiDownload -Job $job -OnLine $onLine -OnStatus $onStatus
+    } catch {
+        $e.Result = [pscustomobject]@{
+            ExitCode       = 1
+            CookieFallback = $false
+            CookieError    = $false
+            ErrorMessage   = $_.Exception.Message
+        }
+    }
+})
+
+$script:downloadWorker.add_ProgressChanged({
+    param($sender, $e)
+    $msg = $e.UserState
+    if ($null -eq $msg) { return }
+    if ($msg.Kind -eq 'status') {
+        $script:lblStatus.ForeColor = $cMuted
+        $script:lblStatus.Text = [string]$msg.Text
+        $script:lblProgress.Text = 'Retrying...'
+        $script:pbDownload.Value = 0
+        return
+    }
+    if ($msg.Kind -eq 'line') {
+        Update-DownloadProgressLine ([string]$msg.Text)
+    }
+})
+
+$script:downloadWorker.add_RunWorkerCompleted({
+    param($sender, $e)
+    $script:downloadBusy = $false
+    $script:btnGo.Enabled = $true
+    $script:btnMp3.Enabled = $true
+    $script:btnMp4.Enabled = $true
+    $script:btnPaste.Enabled = $true
+    $script:form.Cursor = [System.Windows.Forms.Cursors]::Default
+    Update-ModeUi
+
+    if ($e.Error) {
+        $script:lblProgress.Text = 'Error'
+        $script:lblStatus.ForeColor = $cAccentHi
+        $script:lblStatus.Text = "Error: $($e.Error.Message)"
+        return
+    }
+
+    $result = $e.Result
+    if ($result.ErrorMessage) {
+        $script:lblProgress.Text = 'Error'
+        $script:lblStatus.ForeColor = $cAccentHi
+        $script:lblStatus.Text = "Error: $($result.ErrorMessage)"
+        return
+    }
+
+    $exitCode = [int]$result.ExitCode
+    $dir = [string]$script:downloadOutDir
+    if ($exitCode -eq 0) {
+        $script:pbDownload.Value = 100
+        $script:lblProgress.Text = 'Complete'
+        $script:lblStatus.ForeColor = $cOk
+        if ($result.CookieFallback) {
+            $script:lblStatus.Text = "Done (cookies skipped) - saved to $dir"
+        } else {
+            $script:lblStatus.Text = "Done - saved to $dir"
+        }
+        if ($script:downloadOpenAfter) {
+            try { Start-Process -FilePath 'explorer.exe' -ArgumentList $dir | Out-Null } catch {}
+        }
+    } else {
+        $script:lblProgress.Text = 'Failed'
+        $script:lblStatus.ForeColor = $cAccentHi
+        if ($result.CookieFallback) {
+            $script:lblStatus.Text = "Failed (exit $exitCode) after skipping cookies (DPAPI). Try firefox for age-gated videos, or (none)."
+        } elseif ($result.CookieError) {
+            $script:lblStatus.Text = 'Failed: Chrome/Edge cookie decrypt (DPAPI). Set Cookies browser to (none) or firefox.'
+        } else {
+            $script:lblStatus.Text = "Failed (exit $exitCode). Try yt update, or cookies via firefox for age-gated videos."
+        }
+    }
+})
 
 $btnGo.Add_Click({
+    if ($script:downloadBusy -or $script:downloadWorker.IsBusy) { return }
+
     $url = $txtUrl.Text.Trim()
     if (-not $url) {
         $url = Get-ClipboardUrl
@@ -627,55 +781,36 @@ $btnGo.Add_Click({
     }
 
     $mode = $script:SelectedMode
+    $outDir = if ($mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
+    $job = New-RipDemonGuiDownloadArgs `
+        -Mode $mode `
+        -Url $url `
+        -NoPlaylist ([bool]$chkNoPl.Checked) `
+        -Cookies ($cmbCookies.Text.Trim()) `
+        -ThumbnailOnly ([bool]$chkThumb.Checked) `
+        -Quality ([string]$cmbQuality.SelectedItem) `
+        -SponsorBlock ([bool]$chkSponsor.Checked) `
+        -Subs ([bool]$chkSubs.Checked) `
+        -SubsLang ($cmbSubsLang.Text.Trim()) `
+        -OutDir $outDir
+
+    $script:downloadOutDir = $outDir
+    $script:downloadOpenAfter = [bool]$chkOpen.Checked
+    $script:downloadBusy = $true
 
     $lblStatus.ForeColor = $cMuted
     $lblStatus.Text = "Starting $mode download..."
     $lblProgress.Text = 'Connecting...'
     $pbDownload.Value = 0
+    $script:lastProgressPct = -1
+    $script:lastProgressUiUtc = [datetime]::MinValue
     $btnGo.Enabled = $false
     $btnMp3.Enabled = $false
     $btnMp4.Enabled = $false
     $btnPaste.Enabled = $false
-    $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-    $form.Refresh()
+    $form.Cursor = [System.Windows.Forms.Cursors]::AppStarting
 
-    try {
-        $result = Invoke-RipDemonGuiDownload -Mode $mode -Url $url
-        $exitCode = [int]$result.ExitCode
-        if ($exitCode -eq 0) {
-            $dir = if ($mode -eq 'mp3') { $cfg.Mp3Dir } else { $cfg.Mp4Dir }
-            $pbDownload.Value = 100
-            $lblProgress.Text = 'Complete'
-            $lblStatus.ForeColor = $cOk
-            if ($result.CookieFallback) {
-                $lblStatus.Text = "Done (cookies skipped) - saved to $dir"
-            } else {
-                $lblStatus.Text = "Done - saved to $dir"
-            }
-            if ($chkOpen.Checked) {
-                try { Start-Process -FilePath 'explorer.exe' -ArgumentList $dir | Out-Null } catch {}
-            }
-        } else {
-            $lblProgress.Text = 'Failed'
-            $lblStatus.ForeColor = $cAccentHi
-            if ($result.CookieError) {
-                $lblStatus.Text = 'Failed: Chrome/Edge cookie decrypt (DPAPI). Set Cookies browser to (none) or firefox.'
-            } else {
-                $lblStatus.Text = "Failed (exit $exitCode). Try yt update, or cookies via firefox for age-gated videos."
-            }
-        }
-    } catch {
-        $lblProgress.Text = 'Error'
-        $lblStatus.ForeColor = $cAccentHi
-        $lblStatus.Text = "Error: $($_.Exception.Message)"
-    } finally {
-        $btnGo.Enabled = $true
-        $btnMp3.Enabled = $true
-        $btnMp4.Enabled = $true
-        $btnPaste.Enabled = $true
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
-        Update-ModeUi
-    }
+    $script:downloadWorker.RunWorkerAsync($job)
 })
 
 

@@ -196,11 +196,11 @@ function Get-RipDemonUrlInteractive {
 
 function Get-RipDemonTargetsFromTextFile {
     param([string]$Path)
-    $urls = @()
+    $urls = New-Object System.Collections.Generic.List[string]
     foreach ($line in Get-Content -LiteralPath $Path) {
         $t = $line.Trim()
         if (-not $t -or $t.StartsWith('#') -or $t.StartsWith(';')) { continue }
-        if (Test-RipDemonUrlLike $t) { $urls += (Normalize-RipDemonUrl $t) }
+        if (Test-RipDemonUrlLike $t) { [void]$urls.Add((Normalize-RipDemonUrl $t)) }
     }
     return $urls
 }
@@ -231,7 +231,7 @@ function Resolve-RipDemonTargets {
 }
 
 function Show-RipDemonUsage {
-    $ver = '1.0.1'
+    $ver = '1.0.2'
     $vf = Join-Path $InstallRoot 'version.txt'
     if (Test-Path -LiteralPath $vf) { $ver = (Get-Content -LiteralPath $vf -Raw).Trim() }
     Write-Host ''
@@ -284,7 +284,8 @@ function Invoke-RipDemonYtDlp {
     param(
         [Parameter(Mandatory)][string[]]$Arguments,
         [string]$Label = 'Downloading',
-        [switch]$PassThru
+        [switch]$PassThru,
+        [switch]$CaptureOutput
     )
     if (-not (Test-Path -LiteralPath $YtDlp)) {
         Write-Host "Error: yt-dlp not found at `"$YtDlp`"" -ForegroundColor Red
@@ -294,15 +295,26 @@ function Invoke-RipDemonYtDlp {
         }
         return 1
     }
-    $env:Path = "$ToolsDir;$env:Path"
+    Initialize-RipDemonToolsPath -ToolsDir $ToolsDir
     Write-Host ''
     Write-Host "  $Label..." -ForegroundColor Cyan
-    # Capture stdout+stderr so callers can detect cookie/DPAPI failures, while still printing live.
-    $output = & $YtDlp @Arguments 2>&1
-    $lines = New-Object System.Collections.Generic.List[string]
-    foreach ($line in @($output)) {
-        $text = if ($line -is [System.Management.Automation.ErrorRecord]) { $line.ToString() } else { [string]$line }
-        [void]$lines.Add($text)
+
+    $shouldCapture = $PassThru -or $CaptureOutput
+    if (-not $shouldCapture) {
+        # Fast path: inherit console (live yt-dlp progress, no PS pipeline tax).
+        & $YtDlp @Arguments
+        $code = $LASTEXITCODE
+        if ($null -eq $code) {
+            $code = if ($?) { 0 } else { 1 }
+        }
+        return [int]$code
+    }
+
+    # Capture path: stream live, keep a rolling tail for DPAPI / error detection.
+    $buffer = New-RipDemonLineBuffer -Capacity 200
+    & $YtDlp @Arguments 2>&1 | ForEach-Object {
+        $text = if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { [string]$_ }
+        Add-RipDemonLineBuffer -Buffer $buffer -Line $text
         Write-Host $text
     }
     # PS 5.1 can leave $LASTEXITCODE $null after a successful native exe - treat null as 0.
@@ -313,7 +325,7 @@ function Invoke-RipDemonYtDlp {
     if ($PassThru) {
         return [pscustomobject]@{
             ExitCode = [int]$code
-            Output   = ($lines -join "`n")
+            Output   = (Get-RipDemonLineBufferText -Buffer $buffer)
         }
     }
     return [int]$code
@@ -325,13 +337,30 @@ function Invoke-RipDemonYtDlpWithCookieFallback {
         [string]$Label = 'Downloading',
         [string]$CookiesBrowser = ''
     )
+    $browserLabel = [string]$CookiesBrowser
+    $hasCookiesFromBrowser = $false
+    for ($i = 0; $i -lt $ArgumentList.Count; $i++) {
+        if ($ArgumentList[$i] -eq '--cookies-from-browser') {
+            $hasCookiesFromBrowser = $true
+            if ((-not $browserLabel) -and (($i + 1) -lt $ArgumentList.Count)) {
+                $browserLabel = [string]$ArgumentList[$i + 1]
+            }
+            break
+        }
+    }
+
+    # No browser cookies: inherit console (fast). Cookies: capture rolling tail for DPAPI detection.
+    if (-not $hasCookiesFromBrowser) {
+        return [int](Invoke-RipDemonYtDlp -Arguments $ArgumentList.ToArray() -Label $Label)
+    }
+
     $result = Invoke-RipDemonYtDlp -Arguments $ArgumentList.ToArray() -Label $Label -PassThru
     if ($result.ExitCode -eq 0) { return [int]$result.ExitCode }
-    if (-not $CookiesBrowser) { return [int]$result.ExitCode }
     if (-not (Test-RipDemonCookieDecryptError -Text $result.Output)) { return [int]$result.ExitCode }
 
+    if (-not $browserLabel) { $browserLabel = 'browser' }
     Write-Host ''
-    Write-Host "  Cookie decrypt failed ($CookiesBrowser / DPAPI). Retrying without cookies..." -ForegroundColor Yellow
+    Write-Host "  Cookie decrypt failed ($browserLabel / DPAPI). Retrying without cookies..." -ForegroundColor Yellow
     Write-Host '  Tip: set cookies to (none), or use firefox. Chrome often blocks cookie export on Windows.' -ForegroundColor DarkGray
     Remove-RipDemonCookiesFromBrowserArgs -ArgumentList $ArgumentList
     return [int](Invoke-RipDemonYtDlp -Arguments $ArgumentList.ToArray() -Label "$Label (no cookies)")
@@ -481,6 +510,8 @@ function Invoke-RipDemonInfo {
             $yargs.Add('--cookies-from-browser'); $yargs.Add($Opt.CookiesBrowser)
         }
         foreach ($p in $Opt.Passthrough) { $yargs.Add($p) }
+        # One yt-dlp process: metadata prints + format table (avoids a second network round-trip).
+        $yargs.Add('-F')
         $yargs.Add('--')
         $yargs.Add($url)
 
@@ -488,27 +519,7 @@ function Invoke-RipDemonInfo {
             -ArgumentList $yargs `
             -Label 'Fetching info' `
             -CookiesBrowser ([string]$Opt.CookiesBrowser)
-        if ($code -ne 0) { $exit = $code; continue }
-
-        Write-Host ''
-        Write-Host '  Available formats:' -ForegroundColor Cyan
-        $listArgs = New-Object System.Collections.Generic.List[string]
-        $listArgs.Add('--ffmpeg-location'); $listArgs.Add($ToolsDir)
-        if ($Opt.NoPlaylist) { $listArgs.Add('--no-playlist') }
-        # Reuse cookies only if the info fetch kept them (may have fallen back after DPAPI).
-        for ($i = 0; $i -lt $yargs.Count; $i++) {
-            if ($yargs[$i] -eq '--cookies-from-browser' -and ($i + 1) -lt $yargs.Count) {
-                $listArgs.Add('--cookies-from-browser'); $listArgs.Add($yargs[$i + 1])
-                break
-            }
-        }
-        $listArgs.Add('-F')
-        $listArgs.Add('--')
-        $listArgs.Add($url)
-        & $YtDlp @($listArgs.ToArray())
-        $fmtCode = $LASTEXITCODE
-        if ($null -eq $fmtCode) { $fmtCode = if ($?) { 0 } else { 1 } }
-        if ($fmtCode -ne 0) { $exit = [int]$fmtCode }
+        if ($code -ne 0) { $exit = $code }
     }
     return $exit
 }
@@ -543,6 +554,11 @@ function Parse-RipDemonCli {
     }
 
     $cmd = ([string]$tokens[0]).ToLowerInvariant()
+    # Skip config.ini I/O for commands that do not need merged options.
+    if ($cmd -in @('help', '-h', '--help', '/?', 'gui')) {
+        return @{ Command = $cmd; Opt = $null }
+    }
+
     $rest = New-Object System.Collections.Generic.List[string]
     for ($ri = 1; $ri -lt $tokens.Count; $ri++) {
         [void]$rest.Add([string]$tokens[$ri])

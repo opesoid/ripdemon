@@ -68,15 +68,63 @@ function Remove-RipDemonCookiesFromBrowserArgs {
     }
 }
 
+function New-RipDemonLineBuffer {
+    param([int]$Capacity = 200)
+    return @{
+        Capacity = [Math]::Max(1, $Capacity)
+        Lines    = New-Object System.Collections.Generic.Queue[string]
+    }
+}
+
+function Add-RipDemonLineBuffer {
+    param(
+        [Parameter(Mandatory)]$Buffer,
+        [string]$Line
+    )
+    if ($null -eq $Buffer -or $null -eq $Buffer.Lines) { return }
+    $Buffer.Lines.Enqueue([string]$Line)
+    while ($Buffer.Lines.Count -gt $Buffer.Capacity) {
+        [void]$Buffer.Lines.Dequeue()
+    }
+}
+
+function Get-RipDemonLineBufferText {
+    param([Parameter(Mandatory)]$Buffer)
+    if ($null -eq $Buffer -or $null -eq $Buffer.Lines -or $Buffer.Lines.Count -eq 0) { return '' }
+    return [string]::Join("`n", $Buffer.Lines.ToArray())
+}
+
+function Initialize-RipDemonToolsPath {
+    param([Parameter(Mandatory)][string]$ToolsDir)
+    if (-not $ToolsDir) { return }
+    if ($script:RipDemonToolsPathReady -and ($script:RipDemonToolsPathDir -eq $ToolsDir)) { return }
+    $marker = $ToolsDir.TrimEnd('\')
+    $parts = @($env:Path -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ne $marker) })
+    $env:Path = ($marker + ';' + ($parts -join ';')).TrimEnd(';')
+    $script:RipDemonToolsPathReady = $true
+    $script:RipDemonToolsPathDir = $ToolsDir
+}
+
+function Clear-RipDemonConfigCache {
+    $script:RipDemonConfigCache = $null
+    $script:RipDemonConfigCacheKey = $null
+}
+
 function Get-RipDemonConfig {
     param(
         [string]$InstallRoot,
-        [string]$DefaultConfigPath
+        [string]$DefaultConfigPath,
+        [switch]$ForceRefresh
     )
     if (-not $InstallRoot) {
         $InstallRoot = Join-Path $env:LOCALAPPDATA 'RIP-Demon'
     }
     $configPath = Get-RipDemonConfigPath -InstallRoot $InstallRoot
+    $cacheKey = "{0}|{1}" -f $InstallRoot, [string]$DefaultConfigPath
+    if (-not $ForceRefresh -and $script:RipDemonConfigCache -and ($script:RipDemonConfigCacheKey -eq $cacheKey)) {
+        return $script:RipDemonConfigCache
+    }
+
     $defaults = Get-RipDemonDefaultOutputDirs
     $ini = @{}
     if ($DefaultConfigPath -and (Test-Path -LiteralPath $DefaultConfigPath)) {
@@ -98,7 +146,7 @@ function Get-RipDemonConfig {
     if ($ini['defaults.quality']) { $quality = $ini['defaults.quality'].Trim().ToLowerInvariant() }
     if ($quality -notin @('720', '1080', 'best')) { $quality = '1080' }
 
-    [pscustomobject]@{
+    $cfg = [pscustomobject]@{
         InstallRoot    = $InstallRoot
         ConfigPath     = $configPath
         Mp3Dir         = $mp3
@@ -109,6 +157,9 @@ function Get-RipDemonConfig {
         OpenAfter      = (Get-RipDemonIniBool $ini['defaults.open_after'] $false)
         SponsorBlock   = (Get-RipDemonIniBool $ini['defaults.sponsorblock'] $false)
     }
+    $script:RipDemonConfigCache = $cfg
+    $script:RipDemonConfigCacheKey = $cacheKey
+    return $cfg
 }
 
 function Write-RipDemonUserConfig {
@@ -144,5 +195,6 @@ function Write-RipDemonUserConfig {
         ''
     )
     Set-Content -Path $path -Value $lines -Encoding UTF8
+    Clear-RipDemonConfigCache
     return $path
 }

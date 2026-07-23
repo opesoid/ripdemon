@@ -138,6 +138,26 @@ function Assert-RipDemonWindowsX64 {
     }
 }
 
+function Expand-RipDemonArchive {
+    <#
+    .SYNOPSIS
+      Extract a zip. Prefer tar.exe (faster) with Expand-Archive fallback.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ZipPath,
+        [Parameter(Mandatory)][string]$DestinationPath
+    )
+    New-Item -ItemType Directory -Force -Path $DestinationPath | Out-Null
+    $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+    if ($tar) {
+        & tar.exe -xf $ZipPath -C $DestinationPath 2>$null
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = if ($?) { 0 } else { 1 } }
+        if ($code -eq 0) { return }
+    }
+    Expand-Archive -Path $ZipPath -DestinationPath $DestinationPath -Force
+}
+
 function Save-RipDemonFile {
     <#
     .SYNOPSIS
@@ -460,7 +480,7 @@ function Install-Ffmpeg {
         Save-RipDemonFile @saveParams
 
         Write-Host '  Extracting FFmpeg...' -ForegroundColor Cyan
-        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+        Expand-RipDemonArchive -ZipPath $zipPath -DestinationPath $extractDir
 
         $binDir = Get-ChildItem -Path $extractDir -Recurse -Directory -Filter 'bin' |
             Where-Object { Test-Path (Join-Path $_.FullName 'ffmpeg.exe') } |
@@ -576,7 +596,7 @@ function Install-Deno {
         Save-RipDemonFile -Uri $latest.Url -OutFile $zipPath -Label $label -ExpectedSize $mb `
             -ExpectedSha256 $latest.Sha256 -ExpectedByteSize $latest.Size
         Write-Host '  Extracting deno...' -ForegroundColor Cyan
-        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+        Expand-RipDemonArchive -ZipPath $zipPath -DestinationPath $extractDir
         $denoExe = Get-ChildItem -Path $extractDir -Recurse -Filter 'deno.exe' | Select-Object -First 1
         if (-not $denoExe) {
             throw 'Deno zip did not contain deno.exe.'
@@ -774,7 +794,7 @@ function Copy-RipDemonAppFiles {
     $version = if (Test-Path -LiteralPath $versionFile) {
         (Get-Content -LiteralPath $versionFile -Raw).Trim()
     } else {
-        '1.0.1'
+        '1.0.2'
     }
 
     Copy-Item -Force $srcYt (Join-Path $binDir 'yt.cmd')
@@ -829,7 +849,7 @@ function Install-RipDemonAppFromZip {
     try {
         New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
         Write-Host '  Extracting RIP Demon package...' -ForegroundColor Cyan
-        Expand-Archive -Path $ZipPath -DestinationPath $extractDir -Force
+        Expand-RipDemonArchive -ZipPath $ZipPath -DestinationPath $extractDir
         $projectRoot = Resolve-RipDemonProjectRoot -ExtractDir $extractDir
         $result = Copy-RipDemonAppFiles -ProjectRoot $projectRoot -InstallRoot $InstallRoot
         Write-Host "  Application files updated to $($result.Version)." -ForegroundColor Green

@@ -67,6 +67,8 @@ Assert-True ($iss -notmatch '\[Icons\]') 'Inno does not duplicate Start Menu [Ic
 
 $tools = Get-Content (Join-Path $ProjectRoot 'updater\RipDemon.Tools.ps1') -Raw
 Assert-True ($tools -match 'function Get-RipDemonGitHubFileContent') 'Get-RipDemonGitHubFileContent present'
+Assert-True ($tools -match 'function Expand-RipDemonArchive') 'Expand-RipDemonArchive helper present'
+Assert-True ($tools -match 'tar\.exe') 'Expand-RipDemonArchive prefers tar.exe'
 Assert-True ($tools -match 'function Get-RipDemonRepoSource') 'Get-RipDemonRepoSource present'
 Assert-True ($tools -match 'function Compare-RipDemonVersion') 'Compare-RipDemonVersion present'
 Assert-True ($tools -match 'function Copy-RipDemonAppFiles') 'Copy-RipDemonAppFiles present'
@@ -95,7 +97,7 @@ Assert-True ($tools -match 'opes\.dev') 'branding URL opes.dev present'
 
 $readme = Get-Content (Join-Path $ProjectRoot 'README.md') -Raw
 Assert-True ($readme -match 'opes\.dev') 'README mentions opes.dev'
-Assert-True ($readme -match 'Version 1\.0\.1|currently \*\*1\.0\.1\*\*|Version \| \*\*1\.0\.1\*\*') 'README documents 1.0.1'
+Assert-True ($readme -match 'Version 1\.0\.2|currently \*\*1\.0\.2\*\*|Version \| \*\*1\.0\.2\*\*') 'README documents 1.0.2'
 Assert-True ($readme -match 'web-install\.ps1') 'README documents web-install'
 Assert-True ($readme -match 'cdn\.jsdelivr\.net/gh/opesoid/ripdemon@main/installer/web-install\.ps1') 'README has jsDelivr one-liner install'
 
@@ -121,6 +123,8 @@ Assert-True ($webInstall -match 'Write-RipDemonBanner missing') 'web-install val
 $yt = Get-Content (Join-Path $ProjectRoot 'src\yt.cmd') -Raw
 Assert-True ($yt -match 'RipDemon\.Cli\.ps1') 'yt.cmd forwards to RipDemon.Cli.ps1'
 Assert-True ($yt -match 'version') 'yt.cmd supports version'
+Assert-True ($yt -match '(?m)^:gui\b' -or $yt -match 'goto :gui') 'yt.cmd launches GUI directly'
+Assert-True ($yt -match 'RipDemon\.Gui\.ps1') 'yt.cmd GUI path points at Gui.ps1'
 Assert-True ($yt -match 'Update\.ps1" %2 %3 %4') 'yt update forwards flags via %2+ (not %*)'
 Assert-True ($yt -notmatch 'Update\.ps1" %\*') 'yt update does not use broken %* after shift'
 
@@ -133,6 +137,12 @@ Assert-True ($gui -match '--write-thumbnail') 'GUI supports thumbnail-only'
 Assert-True ($gui -match 'cmbQuality') 'GUI supports MP4 quality'
 Assert-True ($gui -match '--cookies-from-browser') 'GUI supports cookies'
 Assert-True ($gui -match 'Test-RipDemonCookieDecryptError') 'GUI retries after cookie decrypt failure'
+Assert-True ($gui -match 'ConcurrentQueue') 'GUI reads yt-dlp stdout/stderr asynchronously'
+Assert-True ($gui -match 'BackgroundWorker') 'GUI downloads on BackgroundWorker'
+Assert-True ($gui -match 'New-RipDemonLineBuffer') 'GUI uses rolling output buffer'
+Assert-True ($gui -match 'lastProgressUiUtc') 'GUI throttles progress UI updates'
+Assert-True ($gui -match 'Initialize-RipDemonToolsPath') 'GUI primes tools PATH once'
+Assert-True ($gui -match 'after skipping cookies') 'GUI reports cookie-fallback failure distinctly'
 Assert-True ($gui -match '--no-playlist') 'GUI supports no-playlist'
 Assert-True ($gui -match 'explorer\.exe') 'GUI supports open folder'
 Assert-True ($gui -match 'pbDownload') 'GUI has download progress bar'
@@ -143,6 +153,12 @@ $cli = Get-Content (Join-Path $ProjectRoot 'src\lib\RipDemon.Cli.ps1') -Raw
 Assert-True ($cli -match '--no-playlist') 'CLI supports --no-playlist'
 Assert-True ($cli -match 'cookies-from-browser') 'CLI supports cookies-from-browser'
 Assert-True ($cli -match 'Invoke-RipDemonYtDlpWithCookieFallback') 'CLI retries after cookie decrypt failure'
+Assert-True ($cli -match 'ForEach-Object') 'CLI streams yt-dlp output live while capturing'
+Assert-True ($cli -match 'hasCookiesFromBrowser') 'CLI cookie fallback detects passthrough cookies args'
+Assert-True ($cli -match 'Initialize-RipDemonToolsPath') 'CLI primes tools PATH once'
+Assert-True ($cli -match 'New-RipDemonLineBuffer') 'CLI uses rolling output buffer'
+Assert-True ($cli -match "inherit console") 'CLI inherits console when cookies are off'
+Assert-True ($cli -match "yargs\.Add\('-F'\)") 'CLI info uses one-shot -F with metadata'
 Assert-True ($cli -match 'output-dir') 'CLI supports --output-dir'
 Assert-True ($cli -match '--open') 'CLI supports --open'
 Assert-True ($cli -match 'Get-RipDemonClipboardText') 'CLI supports clipboard'
@@ -164,7 +180,7 @@ Assert-True ($dirs.Mp4 -match 'Videos\\RIP Demon\\MP4$') "Get-RipDemonOutputDirs
 
 # --- Version compare (no network) ---
 Assert-True ((Compare-RipDemonVersion -VersionA '1.0.0' -VersionB '1.0.0') -eq 0) 'Compare equal versions'
-Assert-True ((Compare-RipDemonVersion -VersionA '1.0.0' -VersionB '1.0.1') -eq -1) 'Compare older < newer'
+Assert-True ((Compare-RipDemonVersion -VersionA '1.0.1' -VersionB '1.0.2') -eq -1) 'Compare older < newer'
 Assert-True ((Compare-RipDemonVersion -VersionA '1.2.0' -VersionB '1.0.9') -eq 1) 'Compare newer > older'
 Assert-True ((Compare-RipDemonVersion -VersionA 'v1.0.0' -VersionB '1.0.0') -eq 0) 'Compare strips v prefix'
 
@@ -183,6 +199,38 @@ Remove-Item -Recurse -Force $copyRoot -ErrorAction SilentlyContinue
 $cfgObj = Get-RipDemonConfig -InstallRoot (Join-Path $env:TEMP 'ripdemon-no-such') -DefaultConfigPath (Join-Path $ProjectRoot 'src\lib\config.default.ini')
 Assert-True ($cfgObj.Quality -eq '1080') 'default quality is 1080'
 Assert-True ($cfgObj.Mp3Dir -eq $dirs.Mp3) 'Config.ps1 default MP3 matches Tools'
+
+Assert-True (Test-RipDemonCookieDecryptError -Text 'ERROR: Failed to decrypt with DPAPI') 'cookie decrypt detector matches DPAPI'
+Assert-True (Test-RipDemonCookieDecryptError -Text 'Aborting since cookies could not be decrypted') 'cookie decrypt detector matches abort message'
+Assert-True (Test-RipDemonCookieDecryptError -Text 'Could not copy Chrome cookie database') 'cookie decrypt detector matches Chrome copy error'
+Assert-True (-not (Test-RipDemonCookieDecryptError -Text 'ERROR: Video unavailable')) 'cookie decrypt detector ignores unrelated errors'
+Assert-True (-not (Test-RipDemonCookieDecryptError -Text '')) 'cookie decrypt detector treats empty as false'
+
+$buf = New-RipDemonLineBuffer -Capacity 3
+1..5 | ForEach-Object { Add-RipDemonLineBuffer -Buffer $buf -Line ("L$_") }
+$bufText = Get-RipDemonLineBufferText -Buffer $buf
+Assert-True ($bufText -eq "L3`nL4`nL5") 'rolling line buffer keeps last N lines'
+
+$toolsPathBefore = $env:Path
+Initialize-RipDemonToolsPath -ToolsDir 'C:\RipDemon-Tools-Test'
+Initialize-RipDemonToolsPath -ToolsDir 'C:\RipDemon-Tools-Test'
+$toolsHits = @($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -eq 'C:\RipDemon-Tools-Test' }).Count
+Assert-True ($toolsHits -eq 1) 'Initialize-RipDemonToolsPath prepends tools dir once'
+$env:Path = $toolsPathBefore
+
+$cfg1 = Get-RipDemonConfig -InstallRoot (Join-Path $env:TEMP 'ripdemon-no-such') -DefaultConfigPath (Join-Path $ProjectRoot 'src\lib\config.default.ini')
+$cfg2 = Get-RipDemonConfig -InstallRoot (Join-Path $env:TEMP 'ripdemon-no-such') -DefaultConfigPath (Join-Path $ProjectRoot 'src\lib\config.default.ini')
+Assert-True ($cfg1 -eq $cfg2) 'Get-RipDemonConfig caches within process'
+
+$cookieArgs = New-Object System.Collections.Generic.List[string]
+$cookieArgs.Add('-f'); $cookieArgs.Add('best')
+$cookieArgs.Add('--cookies-from-browser'); $cookieArgs.Add('chrome')
+$cookieArgs.Add('--'); $cookieArgs.Add('https://example.com/watch?v=1')
+Remove-RipDemonCookiesFromBrowserArgs -ArgumentList $cookieArgs
+Assert-True (-not ($cookieArgs -contains '--cookies-from-browser')) 'Remove-RipDemonCookiesFromBrowserArgs drops flag'
+Assert-True (-not ($cookieArgs -contains 'chrome')) 'Remove-RipDemonCookiesFromBrowserArgs drops browser value'
+Assert-True (($cookieArgs -contains '-f') -and ($cookieArgs -contains 'best')) 'Remove-RipDemonCookiesFromBrowserArgs keeps other args'
+Assert-True (($cookieArgs -contains '--') -and ($cookieArgs -contains 'https://example.com/watch?v=1')) 'Remove-RipDemonCookiesFromBrowserArgs keeps URL args'
 
 # --- Fake install layout: help / unknown command exit codes ---
 $fakeRoot = Join-Path $env:TEMP ("ripdemon-smoke-{0}" -f [guid]::NewGuid().ToString('N'))

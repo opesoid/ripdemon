@@ -18,6 +18,7 @@ if errorlevel 1 (
 if /I "%~1"=="version" goto :version
 if /I "%~1"=="update" goto :update
 if /I "%~1"=="uninstall" goto :uninstall
+if /I "%~1"=="gui" goto :gui
 
 set "RIPDEMON_CLI=%RIPDEMON_LIB%\RipDemon.Cli.ps1"
 if not exist "%RIPDEMON_CLI%" (
@@ -26,9 +27,19 @@ if not exist "%RIPDEMON_CLI%" (
   exit /b 1
 )
 
-REM Forward all args to PowerShell CLI (mp3/mp4/info/gui/config/help/...)
-REM -STA required for WinForms (yt gui)
-powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%RIPDEMON_CLI%" %*
+REM Forward all args to PowerShell CLI (mp3/mp4/info/config/help/...)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%RIPDEMON_CLI%" %*
+exit /b %ERRORLEVEL%
+
+:gui
+REM Launch WinForms GUI directly (skip loading the full CLI engine).
+set "RIPDEMON_GUI_PS1=%RIPDEMON_GUI%\RipDemon.Gui.ps1"
+if not exist "%RIPDEMON_GUI_PS1%" (
+  echo Error: GUI script not found at "%RIPDEMON_GUI_PS1%"
+  echo Re-run the installer.
+  exit /b 1
+)
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%RIPDEMON_GUI_PS1%"
 exit /b %ERRORLEVEL%
 
 :version

@@ -1,12 +1,12 @@
 ; RIP Demon — Inno Setup script
-; Compile with: ISCC.exe /DMyAppVersion=1.0.1 RIP-Demon.iss
+; Compile with: ISCC.exe /DMyAppVersion=1.0.2 RIP-Demon.iss
 ; Or via build\Build-Release.ps1 when Inno Setup 6 is installed.
 ;
 ; Start Menu shortcuts and Apps & features registration are created by
 ; installer\Install.ps1 (run in [Run]) — do not duplicate them here.
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.1"
+  #define MyAppVersion "1.0.2"
 #endif
 
 #define MyAppName "RIP Demon"
